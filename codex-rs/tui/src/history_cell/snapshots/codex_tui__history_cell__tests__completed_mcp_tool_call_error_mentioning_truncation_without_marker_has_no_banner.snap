@@ -1,0 +1,15 @@
+---
+source: tui/src/history_cell/tests.rs
+assertion_line: 1684
+expression: transcript
+---
+• MCP tool call
+  Tool: workspace.read_log
+  Call ID: call-mention-only
+  Status: failed
+Arguments:
+  {
+    "path": "synthetic-session.jsonl"
+  }
+Result:
+  Error: backend failed: 100 chars truncated…

@@ -1647,6 +1647,32 @@ fn completed_mcp_tool_call_truncated_error_transcript_snapshot() {
     assert!(
         cell.complete(
             None::<Duration>,
+            Err("backend failed: head…100 chars truncated…tail".into()),
+        )
+        .is_none()
+    );
+
+    let transcript = render_lines(&cell.transcript_lines(/*width*/ 80)).join("\n");
+
+    insta::assert_snapshot!(transcript);
+}
+
+#[test]
+fn completed_mcp_tool_call_error_mentioning_truncation_without_marker_has_no_banner() {
+    let invocation = McpInvocation {
+        server: "workspace".into(),
+        tool: "read_log".into(),
+        arguments: Some(json!({"path": "synthetic-session.jsonl"})),
+    };
+    let mut cell = new_active_mcp_tool_call(
+        "call-mention-only".into(),
+        invocation,
+        /*animations_enabled*/ false,
+    );
+    assert!(
+        cell.complete(
+            None::<Duration>,
+            // Looks similar to a marker but lacks the leading ellipsis Codex writers emit.
             Err("backend failed: 100 chars truncated…".into()),
         )
         .is_none()
@@ -1654,6 +1680,7 @@ fn completed_mcp_tool_call_truncated_error_transcript_snapshot() {
 
     let transcript = render_lines(&cell.transcript_lines(/*width*/ 80)).join("\n");
 
+    assert!(!transcript.contains("Saved output is already truncated upstream"));
     insta::assert_snapshot!(transcript);
 }
 

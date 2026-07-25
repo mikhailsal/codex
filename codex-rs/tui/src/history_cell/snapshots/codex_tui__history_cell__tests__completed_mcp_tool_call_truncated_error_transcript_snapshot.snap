@@ -1,5 +1,6 @@
 ---
 source: tui/src/history_cell/tests.rs
+assertion_line: 1657
 expression: transcript
 ---
 • MCP tool call
@@ -13,4 +14,4 @@ Arguments:
 ⚠ Saved output is already truncated upstream; missing content cannot be
 recovered.
 Result:
-  Error: backend failed: 100 chars truncated…
+  Error: backend failed: head…100 chars truncated…tail
