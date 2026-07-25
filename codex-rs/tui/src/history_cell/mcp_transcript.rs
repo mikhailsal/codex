@@ -211,9 +211,5 @@ fn render_content_block(block: &serde_json::Value) -> String {
 }
 
 fn saved_output_is_truncated(text: &str) -> bool {
-    text.contains("Warning: truncated output")
-        || text.contains(" tokens truncated…")
-        || text.contains(" chars truncated…")
-        || text.contains(" bytes truncated…")
-        || text.contains("…output truncated…")
+    codex_session_inspector::text_contains_truncation_marker(text)
 }

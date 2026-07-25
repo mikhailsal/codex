@@ -1,5 +1,14 @@
 //! Read-only normalization of tool calls persisted in Codex session rollouts.
 
+mod completeness;
+
+pub use completeness::Completeness;
+pub use completeness::TruncationMarker;
+pub use completeness::TruncationMarkerKind;
+pub use completeness::assess_tool_result;
+pub use completeness::detect_truncation_markers;
+pub use completeness::text_contains_truncation_marker;
+
 use std::collections::HashMap;
 use std::path::Path;
 use std::path::PathBuf;
@@ -19,6 +28,7 @@ pub struct ToolCallRecord {
     pub tool: ToolIdentity,
     pub arguments: RawPayload,
     pub result: Option<ToolResult>,
+    pub completeness: Completeness,
     pub call_source: RecordSource,
     pub result_source: Option<RecordSource>,
 }
@@ -75,6 +85,7 @@ pub struct OrphanToolOutput {
     pub call_id: String,
     pub kind: ToolKind,
     pub result: ToolResult,
+    pub completeness: Completeness,
     pub source: RecordSource,
 }
 
@@ -313,6 +324,7 @@ fn push_call(
         tool,
         arguments: RawPayload::new(arguments),
         result: None,
+        completeness: Completeness::Unknown,
         call_source: source,
         result_source: None,
     });
@@ -335,6 +347,7 @@ fn push_output(
         raw: raw_output,
         body,
     };
+    let completeness = assess_tool_result(&result);
     let key = (turn_id.clone(), call_id.clone());
     if let Some(call) = collector
         .calls_by_key
@@ -343,6 +356,7 @@ fn push_output(
         && call.tool.kind == kind
     {
         call.result = Some(result);
+        call.completeness = completeness;
         call.result_source = Some(source);
     } else {
         collector.records.orphan_outputs.push(OrphanToolOutput {
@@ -350,6 +364,7 @@ fn push_output(
             call_id,
             kind,
             result,
+            completeness,
             source,
         });
     }
