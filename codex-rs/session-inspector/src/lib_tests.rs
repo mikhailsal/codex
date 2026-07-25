@@ -176,6 +176,24 @@ async fn uses_persisted_turn_ids_without_turn_lifecycle_events() {
 }
 
 #[tokio::test]
+async fn clears_lifecycle_turn_after_an_abort_without_a_turn_id() {
+    let fixture = Fixture::plain(&[
+        turn_started("turn-1"),
+        turn_aborted(),
+        function_call("call-1", "after abort"),
+        function_output("call-1", "ok"),
+    ]);
+
+    let records = read_tool_records(&fixture.path).await.unwrap();
+
+    assert_eq!(records.calls[0].turn_id, None);
+    assert_eq!(
+        records.calls[0].result.as_ref().map(|result| &result.body),
+        Some(&ToolResultBody::Text("ok".to_string()))
+    );
+}
+
+#[tokio::test]
 async fn retains_unmatched_outputs() {
     let fixture = Fixture::plain(&[turn_started("turn-1"), function_output("missing", "orphan")]);
 
@@ -281,6 +299,17 @@ fn turn_complete(turn_id: &str) -> Value {
             "type": "turn_complete",
             "turn_id": turn_id,
             "last_agent_message": null
+        }
+    }))
+}
+
+fn turn_aborted() -> Value {
+    line(json!({
+        "type": "event_msg",
+        "payload": {
+            "type": "turn_aborted",
+            "turn_id": null,
+            "reason": "interrupted"
         }
     }))
 }

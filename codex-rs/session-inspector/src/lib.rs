@@ -176,6 +176,15 @@ pub async fn read_tool_records(
                     current_turn_id = None;
                 }
             }
+            RolloutItem::EventMsg(EventMsg::TurnAborted(event)) => {
+                if event
+                    .turn_id
+                    .as_ref()
+                    .is_none_or(|turn_id| current_turn_id.as_ref() == Some(turn_id))
+                {
+                    current_turn_id = None;
+                }
+            }
             RolloutItem::ResponseItem(ResponseItem::Other) => {
                 records
                     .unknown_records
