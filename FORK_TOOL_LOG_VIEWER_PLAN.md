@@ -790,7 +790,7 @@ live UI и rollout replay.
 
 1. [x] fixtures и characterization tests — внутри PR #1;
 2. [x] reader и `ToolCallRecord` — PR #2;
-3. [~] truncation/completeness detector — PR #3 (текущий);
+3. [x] truncation/completeness detector — PR #3;
 4. [ ] MCP full transcript — фактически сделан в PR #1; banner переведён на общий detector в PR #3;
 5. [ ] function/custom full transcript;
 6. [ ] lazy pager;
