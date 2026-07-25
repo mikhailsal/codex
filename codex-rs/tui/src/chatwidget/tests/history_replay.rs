@@ -1138,6 +1138,84 @@ async fn replayed_in_progress_mcp_tool_call_stays_active() {
 }
 
 #[tokio::test]
+async fn live_and_replayed_mcp_tool_calls_have_matching_full_transcripts() {
+    let (mut live_chat, mut live_rx, _live_op_rx) =
+        make_chatwidget_manual(/*model_override*/ None).await;
+    let (mut replayed_chat, mut replayed_rx, _replayed_op_rx) =
+        make_chatwidget_manual(/*model_override*/ None).await;
+    let _ = drain_insert_history(&mut live_rx);
+    let _ = drain_insert_history(&mut replayed_rx);
+
+    let started_item = || AppServerThreadItem::McpToolCall {
+        id: "mcp-full-transcript".to_string(),
+        server: "workspace".to_string(),
+        tool: "inspect".to_string(),
+        status: codex_app_server_protocol::McpToolCallStatus::InProgress,
+        arguments: json!({"path": "synthetic-session.jsonl"}),
+        app_context: None,
+        mcp_app_resource_uri: None,
+        plugin_id: None,
+        result: None,
+        error: None,
+        duration_ms: None,
+    };
+    let completed_item = || AppServerThreadItem::McpToolCall {
+        id: "mcp-full-transcript".to_string(),
+        server: "workspace".to_string(),
+        tool: "inspect".to_string(),
+        status: codex_app_server_protocol::McpToolCallStatus::Completed,
+        arguments: json!({"path": "synthetic-session.jsonl"}),
+        app_context: None,
+        mcp_app_resource_uri: None,
+        plugin_id: None,
+        result: Some(Box::new(codex_app_server_protocol::McpToolCallResult {
+            content: vec![json!({
+                "type": "text",
+                "text": "line 1\nline 2\nline 3\nline 4\nline 5\nline 6",
+            })],
+            structured_content: Some(json!({"lineCount": 6})),
+            meta: None,
+        })),
+        error: None,
+        duration_ms: Some(25),
+    };
+
+    live_chat.on_mcp_tool_call_started(started_item());
+    live_chat.on_mcp_tool_call_completed(completed_item());
+
+    replayed_chat.replay_thread_item(
+        started_item(),
+        "turn-1".to_string(),
+        ReplayKind::ThreadSnapshot,
+    );
+    replayed_chat.replay_thread_item(
+        completed_item(),
+        "turn-1".to_string(),
+        ReplayKind::ThreadSnapshot,
+    );
+
+    let live_cell = loop {
+        match live_rx.try_recv() {
+            Ok(AppEvent::InsertHistoryCell(cell)) => break cell,
+            Ok(_) => {}
+            Err(err) => panic!("expected live MCP history cell: {err}"),
+        }
+    };
+    let replayed_cell = loop {
+        match replayed_rx.try_recv() {
+            Ok(AppEvent::InsertHistoryCell(cell)) => break cell,
+            Ok(_) => {}
+            Err(err) => panic!("expected replayed MCP history cell: {err}"),
+        }
+    };
+
+    assert_eq!(
+        lines_to_single_string(&live_cell.transcript_lines(/*width*/ 80)),
+        lines_to_single_string(&replayed_cell.transcript_lines(/*width*/ 80)),
+    );
+}
+
+#[tokio::test]
 async fn deferred_mcp_lifecycle_events_keep_fifo_after_stream_finishes() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     let cwd = chat.config.cwd.to_path_buf();

@@ -2,6 +2,9 @@
 
 use super::*;
 
+#[path = "mcp_transcript.rs"]
+mod transcript;
+
 #[derive(Debug)]
 struct McpImageOutputCell;
 
@@ -235,6 +238,10 @@ impl HistoryCell for McpToolCallCell {
         }
 
         lines
+    }
+
+    fn transcript_lines(&self, width: u16) -> Vec<Line<'static>> {
+        transcript::render(self, width)
     }
 
     fn transcript_animation_tick(&self) -> Option<u64> {

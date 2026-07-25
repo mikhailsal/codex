@@ -1,0 +1,19 @@
+---
+source: tui/src/history_cell/tests.rs
+expression: transcript
+---
+• MCP tool call
+  Tool: workspace.read_log
+  Call ID: call-truncated
+  Status: succeeded
+  Duration: 10.00ms
+Arguments:
+  {
+    "path": "synthetic-session.jsonl"
+  }
+⚠ Saved output is already truncated upstream; missing content cannot be recovered.
+Result:
+  Warning: truncated output (original token count: 100)
+  Total output lines: 20
+
+  head…50 tokens truncated…tail

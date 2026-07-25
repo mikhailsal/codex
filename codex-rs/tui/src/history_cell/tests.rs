@@ -1297,6 +1297,79 @@ fn completed_mcp_tool_call_success_snapshot() {
 }
 
 #[test]
+fn completed_mcp_tool_call_full_transcript_snapshot() {
+    let invocation = McpInvocation {
+        server: "search".into(),
+        tool: "find_docs".into(),
+        arguments: Some(json!({
+            "query": "full transcript",
+            "limit": 8,
+        })),
+    };
+    let text = (1..=8)
+        .map(|line| format!("result line {line}: persisted MCP output"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let result = CallToolResult {
+        content: vec![text_block(&text)],
+        is_error: None,
+        structured_content: Some(json!({
+            "matches": 8,
+            "complete": true,
+        })),
+        meta: None,
+    };
+    let mut cell = new_active_mcp_tool_call(
+        "call-full-transcript".into(),
+        invocation,
+        /*animations_enabled*/ false,
+    );
+    assert!(
+        cell.complete(Duration::from_millis(1420), Ok(result))
+            .is_none()
+    );
+
+    let compact = render_lines(&cell.display_lines(/*width*/ 40)).join("\n");
+    let transcript = render_lines(&cell.transcript_lines(/*width*/ 40)).join("\n");
+
+    assert!(!compact.contains("result line 8"));
+    assert!(transcript.contains("result line 8"));
+    insta::assert_snapshot!(transcript);
+}
+
+#[test]
+fn completed_mcp_tool_call_truncated_upstream_transcript_snapshot() {
+    let invocation = McpInvocation {
+        server: "workspace".into(),
+        tool: "read_log".into(),
+        arguments: Some(json!({"path": "synthetic-session.jsonl"})),
+    };
+    let result = CallToolResult {
+        content: vec![text_block(
+            "Warning: truncated output (original token count: 100)\n\
+             Total output lines: 20\n\n\
+             head…50 tokens truncated…tail",
+        )],
+        is_error: None,
+        structured_content: None,
+        meta: None,
+    };
+    let mut cell = new_active_mcp_tool_call(
+        "call-truncated".into(),
+        invocation,
+        /*animations_enabled*/ false,
+    );
+    assert!(
+        cell.complete(Duration::from_millis(10), Ok(result))
+            .is_none()
+    );
+
+    let transcript = render_lines(&cell.transcript_lines(/*width*/ 80)).join("\n");
+
+    insta::assert_snapshot!(transcript);
+}
+
+#[test]
 fn completed_mcp_tool_call_image_after_text_returns_extra_cell() {
     let invocation = McpInvocation {
         server: "image".into(),
