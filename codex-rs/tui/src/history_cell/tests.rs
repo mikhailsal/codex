@@ -1246,6 +1246,21 @@ fn active_mcp_tool_call_snapshot() {
 }
 
 #[test]
+fn active_mcp_tool_call_transcript_is_static() {
+    let cell = new_active_mcp_tool_call(
+        "call-static".into(),
+        McpInvocation {
+            server: "workspace".into(),
+            tool: "inspect".into(),
+            arguments: Some(json!({"path": "README.md"})),
+        },
+        /*animations_enabled*/ true,
+    );
+
+    assert_eq!(cell.transcript_animation_tick(), None);
+}
+
+#[test]
 fn mcp_inventory_loading_snapshot() {
     let cell = new_mcp_inventory_loading(/*animations_enabled*/ true);
     let rendered = render_lines(&cell.display_lines(/*width*/ 80)).join("\n");
@@ -1427,6 +1442,45 @@ fn completed_mcp_tool_call_transcript_row_limit_does_not_overflow() {
 }
 
 #[test]
+fn completed_mcp_tool_call_long_url_does_not_overflow() {
+    let invocation = McpInvocation {
+        server: "workspace".into(),
+        tool: "read_log".into(),
+        arguments: None,
+    };
+    let output = format!(
+        "https://example.com/{}",
+        "x".repeat(u16::MAX as usize * 80 + 256)
+    );
+    let result = CallToolResult {
+        content: vec![text_block(&output)],
+        is_error: None,
+        structured_content: None,
+        meta: None,
+    };
+    let mut cell = new_active_mcp_tool_call(
+        "call-long-url".into(),
+        invocation,
+        /*animations_enabled*/ false,
+    );
+    assert!(
+        cell.complete(Duration::from_millis(25), Ok(result))
+            .is_none()
+    );
+
+    let transcript = cell.transcript_lines(/*width*/ 80);
+    let rendered = render_lines(&transcript);
+
+    assert!(transcript.len() <= u16::MAX as usize);
+    assert!(
+        rendered
+            .iter()
+            .any(|line| line.contains("Transcript row limit reached"))
+    );
+    assert_ne!(cell.desired_transcript_height(/*width*/ 80), 0);
+}
+
+#[test]
 fn completed_mcp_tool_call_truncated_upstream_transcript_snapshot() {
     let invocation = McpInvocation {
         server: "workspace".into(),
@@ -1576,6 +1630,31 @@ fn completed_mcp_tool_call_error_snapshot() {
     let rendered = render_lines(&cell.display_lines(/*width*/ 80)).join("\n");
 
     insta::assert_snapshot!(rendered);
+}
+
+#[test]
+fn completed_mcp_tool_call_truncated_error_transcript_snapshot() {
+    let invocation = McpInvocation {
+        server: "workspace".into(),
+        tool: "read_log".into(),
+        arguments: Some(json!({"path": "synthetic-session.jsonl"})),
+    };
+    let mut cell = new_active_mcp_tool_call(
+        "call-truncated-error".into(),
+        invocation,
+        /*animations_enabled*/ false,
+    );
+    assert!(
+        cell.complete(
+            None::<Duration>,
+            Err("backend failed: 100 chars truncated…".into()),
+        )
+        .is_none()
+    );
+
+    let transcript = render_lines(&cell.transcript_lines(/*width*/ 80)).join("\n");
+
+    insta::assert_snapshot!(transcript);
 }
 
 #[test]

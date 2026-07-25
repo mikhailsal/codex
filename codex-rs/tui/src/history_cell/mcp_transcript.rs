@@ -2,6 +2,7 @@
 
 use super::*;
 use crate::wrapping::adaptive_wrap_line;
+use crate::wrapping::word_wrap_line;
 
 const TRANSCRIPT_MAX_ROWS: usize = u16::MAX as usize;
 const TRANSCRIPT_CONTENT_MAX_ROWS: usize = TRANSCRIPT_MAX_ROWS - 128;
@@ -49,7 +50,14 @@ impl TranscriptBuilder {
                 .subsequent_indent(subsequent_indent.into()),
         );
         for line in wrapped {
-            self.push(line_to_static(&line));
+            let line = line_to_static(&line);
+            if line.width() > self.width {
+                for line in word_wrap_line(&line, RtOptions::new(self.width)) {
+                    self.push(line_to_static(&line));
+                }
+            } else {
+                self.push(line);
+            }
         }
     }
 
@@ -141,7 +149,19 @@ pub(super) fn render(cell: &McpToolCallCell, width: u16) -> Vec<Line<'static>> {
                     builder.push_block("Structured content:", &content);
                 }
             }
-            Err(err) => builder.push_block("Result:", &format!("Error: {err}")),
+            Err(err) => {
+                if saved_output_is_truncated(err) {
+                    builder.push_wrapped_line(
+                        "⚠ Saved output is already truncated upstream; missing content cannot be recovered."
+                            .red()
+                            .bold()
+                            .into(),
+                        "",
+                        "",
+                    );
+                }
+                builder.push_block("Result:", &format!("Error: {err}"));
+            }
         }
     }
 
