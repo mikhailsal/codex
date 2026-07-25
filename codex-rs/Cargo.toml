@@ -85,6 +85,7 @@ members = [
     "responses-api-proxy",
     "response-debug-context",
     "sandboxing",
+    "session-inspector",
     "stdio-to-uds",
     "otel",
     "tui",
@@ -226,6 +227,7 @@ codex-response-debug-context = { path = "response-debug-context" }
 codex-rmcp-client = { path = "rmcp-client" }
 codex-rollout = { path = "rollout" }
 codex-rollout-trace = { path = "rollout-trace" }
+codex-session-inspector = { path = "session-inspector" }
 codex-sandboxing = { path = "sandboxing" }
 codex-secrets = { path = "secrets" }
 codex-shell-command = { path = "shell-command" }
