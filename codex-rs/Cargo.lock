@@ -3966,6 +3966,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "codex-session-inspector"
+version = "0.0.0"
+dependencies = [
+ "codex-protocol",
+ "codex-rollout",
+ "pretty_assertions",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio",
+ "zstd",
+]
+
+[[package]]
 name = "codex-shell-command"
 version = "0.0.0"
 dependencies = [
