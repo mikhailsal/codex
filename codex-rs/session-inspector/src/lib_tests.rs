@@ -65,7 +65,9 @@ async fn normalizes_calls_without_losing_raw_or_structured_payloads() {
             .map(|source| source.line),
         Some(3)
     );
+    assert_eq!(records.calls[0].completeness, Completeness::Complete);
     assert_eq!(records.calls[1].tool.kind, ToolKind::Custom);
+    assert_eq!(records.calls[1].completeness, Completeness::Complete);
     assert_eq!(records.calls[1].arguments.parsed_json, None);
     let ToolResultBody::ContentItems(items) = &records.calls[1].result.as_ref().unwrap().body
     else {
@@ -203,6 +205,38 @@ async fn retains_unmatched_outputs() {
     assert_eq!(records.orphan_outputs.len(), 1);
     assert_eq!(records.orphan_outputs[0].call_id, "missing");
     assert_eq!(records.orphan_outputs[0].source.line, 2);
+    assert_eq!(
+        records.orphan_outputs[0].completeness,
+        Completeness::Complete
+    );
+}
+
+#[tokio::test]
+async fn marks_truncated_results_and_leaves_open_calls_unknown() {
+    let truncated =
+        "Warning: truncated output (original token count: 99)\n\nhead…5 tokens truncated…tail";
+    let fixture = Fixture::plain(&[
+        turn_started("turn-1"),
+        function_call("call-1", "args"),
+        function_output("call-1", truncated),
+        function_call("call-2", "still running"),
+    ]);
+
+    let records = read_tool_records(&fixture.path).await.unwrap();
+
+    assert!(records.calls[0].completeness.is_truncated());
+    let Completeness::Truncated { markers } = &records.calls[0].completeness else {
+        panic!("expected truncated completeness");
+    };
+    assert_eq!(
+        markers.iter().map(|marker| marker.kind).collect::<Vec<_>>(),
+        vec![
+            TruncationMarkerKind::WarningTruncatedOutput,
+            TruncationMarkerKind::TokensTruncated,
+        ]
+    );
+    assert_eq!(records.calls[1].result, None);
+    assert_eq!(records.calls[1].completeness, Completeness::Unknown);
 }
 
 #[tokio::test]

@@ -4212,6 +4212,7 @@ dependencies = [
  "codex-protocol",
  "codex-rollout",
  "codex-sandboxing",
+ "codex-session-inspector",
  "codex-shell-command",
  "codex-state",
  "codex-terminal-detection",
