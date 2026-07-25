@@ -1,0 +1,16 @@
+---
+source: tui/src/history_cell/tests.rs
+expression: transcript
+---
+• MCP tool call
+  Tool: workspace.read_log
+  Call ID: call-truncated-error
+  Status: failed
+Arguments:
+  {
+    "path": "synthetic-session.jsonl"
+  }
+⚠ Saved output is already truncated upstream; missing content cannot be
+recovered.
+Result:
+  Error: backend failed: 100 chars truncated…

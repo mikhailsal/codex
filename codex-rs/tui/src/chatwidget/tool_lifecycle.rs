@@ -211,7 +211,8 @@ impl ChatWidget {
             tool,
             arguments: Some(arguments),
         };
-        let duration = Duration::from_millis(duration_ms.unwrap_or_default().max(0) as u64);
+        let duration =
+            duration_ms.map(|duration_ms| Duration::from_millis(duration_ms.max(0) as u64));
         let result = match (result, error) {
             (_, Some(error)) => Err(error.message),
             (Some(result), None) => {

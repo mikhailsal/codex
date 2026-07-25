@@ -1,0 +1,36 @@
+---
+source: tui/src/history_cell/tests.rs
+expression: transcript
+---
+• MCP tool call
+  Tool: search.find_docs
+  Call ID: call-full-transcript
+  Status: succeeded
+  Duration: 1.42s
+Arguments:
+  {
+    "query": "full transcript",
+    "limit": 8
+  }
+Result:
+  result line 1: persisted MCP output at
+  https://example.com/transcript
+  result line 2: persisted MCP output at
+  https://example.com/transcript
+  result line 3: persisted MCP output at
+  https://example.com/transcript
+  result line 4: persisted MCP output at
+  https://example.com/transcript
+  result line 5: persisted MCP output at
+  https://example.com/transcript
+  result line 6: persisted MCP output at
+  https://example.com/transcript
+  result line 7: persisted MCP output at
+  https://example.com/transcript
+  result line 8: persisted MCP output at
+  https://example.com/transcript
+Structured content:
+  {
+    "matches": 8,
+    "complete": true
+  }

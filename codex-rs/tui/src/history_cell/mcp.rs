@@ -2,6 +2,9 @@
 
 use super::*;
 
+#[path = "mcp_transcript.rs"]
+mod transcript;
+
 #[derive(Debug)]
 struct McpImageOutputCell;
 
@@ -61,12 +64,12 @@ impl McpToolCallCell {
 
     pub(crate) fn complete(
         &mut self,
-        duration: Duration,
+        duration: impl Into<Option<Duration>>,
         result: Result<codex_protocol::mcp::CallToolResult, String>,
     ) -> Option<Box<dyn HistoryCell>> {
         let image_cell = try_new_completed_mcp_tool_call_with_image_output(&result)
             .map(|cell| Box::new(cell) as Box<dyn HistoryCell>);
-        self.duration = Some(duration);
+        self.duration = duration.into();
         self.result = Some(result);
         image_cell
     }
@@ -237,11 +240,12 @@ impl HistoryCell for McpToolCallCell {
         lines
     }
 
+    fn transcript_lines(&self, width: u16) -> Vec<Line<'static>> {
+        transcript::render(self, width)
+    }
+
     fn transcript_animation_tick(&self) -> Option<u64> {
-        if !self.animations_enabled || self.result.is_some() {
-            return None;
-        }
-        Some((self.start_time.elapsed().as_millis() / 50) as u64)
+        None
     }
 }
 
