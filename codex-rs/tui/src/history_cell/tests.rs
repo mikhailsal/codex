@@ -1307,7 +1307,9 @@ fn completed_mcp_tool_call_full_transcript_snapshot() {
         })),
     };
     let text = (1..=8)
-        .map(|line| format!("result line {line}: persisted MCP output"))
+        .map(|line| {
+            format!("result line {line}: persisted MCP output at https://example.com/transcript")
+        })
         .collect::<Vec<_>>()
         .join("\n");
     let result = CallToolResult {
@@ -1335,6 +1337,93 @@ fn completed_mcp_tool_call_full_transcript_snapshot() {
     assert!(!compact.contains("result line 8"));
     assert!(transcript.contains("result line 8"));
     insta::assert_snapshot!(transcript);
+}
+
+#[test]
+fn completed_mcp_tool_call_media_transcript_snapshot() {
+    let invocation = McpInvocation {
+        server: "workspace".into(),
+        tool: "inspect".into(),
+        arguments: Some(json!({"path": "synthetic-session.jsonl"})),
+    };
+    let result = CallToolResult {
+        content: vec![
+            image_block("aGVsbG8="),
+            json!({
+                "type": "audio",
+                "data": "YXVkaW8=",
+                "mimeType": "audio/wav",
+            }),
+            serde_json::to_value(Content::embedded_text(
+                "file:///tmp/session.txt",
+                "embedded text resource",
+            ))
+            .expect("text resource content should serialize"),
+            serde_json::to_value(Content::resource(
+                rmcp::model::ResourceContents::blob("YmluYXJ5", "file:///tmp/session.bin")
+                    .with_mime_type("application/octet-stream"),
+            ))
+            .expect("binary resource content should serialize"),
+            resource_link_block("file:///tmp/session.json", "session.json", None, None),
+        ],
+        is_error: None,
+        structured_content: None,
+        meta: None,
+    };
+    let mut cell = new_active_mcp_tool_call(
+        "call-media".into(),
+        invocation,
+        /*animations_enabled*/ false,
+    );
+    assert!(
+        cell.complete(Duration::from_millis(25), Ok(result))
+            .is_none()
+    );
+
+    let transcript = render_lines(&cell.transcript_lines(/*width*/ 80)).join("\n");
+
+    assert!(!transcript.contains("aGVsbG8="));
+    assert!(!transcript.contains("YXVkaW8="));
+    assert!(!transcript.contains("YmluYXJ5"));
+    insta::assert_snapshot!(transcript);
+}
+
+#[test]
+fn completed_mcp_tool_call_transcript_row_limit_does_not_overflow() {
+    let invocation = McpInvocation {
+        server: "workspace".into(),
+        tool: "read_log".into(),
+        arguments: None,
+    };
+    let output = std::iter::repeat_n("line", 66_000)
+        .collect::<Vec<_>>()
+        .join("\n");
+    let result = CallToolResult {
+        content: vec![text_block(&output)],
+        is_error: None,
+        structured_content: None,
+        meta: None,
+    };
+    let mut cell = new_active_mcp_tool_call(
+        "call-large-transcript".into(),
+        invocation,
+        /*animations_enabled*/ false,
+    );
+    assert!(
+        cell.complete(Duration::from_millis(25), Ok(result))
+            .is_none()
+    );
+
+    let transcript = cell.transcript_lines(/*width*/ 80);
+    let rendered = render_lines(&transcript);
+
+    assert!(transcript.len() <= u16::MAX as usize);
+    assert!(
+        rendered
+            .last()
+            .is_some_and(|line| line.contains("Transcript row limit reached"))
+    );
+    assert_ne!(cell.desired_transcript_height(/*width*/ 80), 0);
 }
 
 #[test]

@@ -1,0 +1,21 @@
+---
+source: tui/src/history_cell/tests.rs
+expression: transcript
+---
+• MCP tool call
+  Tool: workspace.inspect
+  Call ID: call-media
+  Status: succeeded
+  Duration: 25.00ms
+Arguments:
+  {
+    "path": "synthetic-session.jsonl"
+  }
+Result:
+  <image content: image/png, 8 encoded bytes>
+  <audio content: audio/wav, 8 encoded bytes>
+  embedded resource: file:///tmp/session.txt
+  embedded text resource
+  <embedded binary resource: file:///tmp/session.bin, application/octet-stream,
+  8 encoded bytes>
+  link: file:///tmp/session.json

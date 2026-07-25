@@ -11,7 +11,8 @@ Arguments:
   {
     "path": "synthetic-session.jsonl"
   }
-⚠ Saved output is already truncated upstream; missing content cannot be recovered.
+⚠ Saved output is already truncated upstream; missing content cannot be
+recovered.
 Result:
   Warning: truncated output (original token count: 100)
   Total output lines: 20

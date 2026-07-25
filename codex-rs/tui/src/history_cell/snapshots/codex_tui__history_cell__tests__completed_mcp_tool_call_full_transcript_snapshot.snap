@@ -13,14 +13,22 @@ Arguments:
     "limit": 8
   }
 Result:
-  result line 1: persisted MCP output
-  result line 2: persisted MCP output
-  result line 3: persisted MCP output
-  result line 4: persisted MCP output
-  result line 5: persisted MCP output
-  result line 6: persisted MCP output
-  result line 7: persisted MCP output
-  result line 8: persisted MCP output
+  result line 1: persisted MCP output at
+  https://example.com/transcript
+  result line 2: persisted MCP output at
+  https://example.com/transcript
+  result line 3: persisted MCP output at
+  https://example.com/transcript
+  result line 4: persisted MCP output at
+  https://example.com/transcript
+  result line 5: persisted MCP output at
+  https://example.com/transcript
+  result line 6: persisted MCP output at
+  https://example.com/transcript
+  result line 7: persisted MCP output at
+  https://example.com/transcript
+  result line 8: persisted MCP output at
+  https://example.com/transcript
 Structured content:
   {
     "matches": 8,

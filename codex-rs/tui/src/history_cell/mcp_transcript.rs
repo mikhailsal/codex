@@ -1,25 +1,103 @@
 //! Fork-only full transcript rendering for persisted MCP tool calls.
 
 use super::*;
+use crate::wrapping::adaptive_wrap_line;
 
-pub(super) fn render(cell: &McpToolCallCell, _width: u16) -> Vec<Line<'static>> {
+const TRANSCRIPT_MAX_ROWS: usize = u16::MAX as usize;
+const TRANSCRIPT_CONTENT_MAX_ROWS: usize = TRANSCRIPT_MAX_ROWS - 128;
+const TRANSCRIPT_ROW_LIMIT_MARKER: &str = "⚠ Transcript row limit reached; more output is hidden.";
+
+struct TranscriptBuilder {
+    lines: Vec<Line<'static>>,
+    width: usize,
+    truncated: bool,
+}
+
+impl TranscriptBuilder {
+    fn new(width: u16) -> Self {
+        Self {
+            lines: Vec::new(),
+            width: usize::from(width).max(1),
+            truncated: false,
+        }
+    }
+
+    fn push(&mut self, line: Line<'static>) {
+        if self.lines.len() < TRANSCRIPT_CONTENT_MAX_ROWS {
+            self.lines.push(line);
+        } else {
+            self.truncated = true;
+        }
+    }
+
+    fn push_wrapped_line(
+        &mut self,
+        line: Line<'static>,
+        initial_indent: &'static str,
+        subsequent_indent: &'static str,
+    ) {
+        let initial_indent = if self.width >= 3 { initial_indent } else { "" };
+        let subsequent_indent = if self.width >= 3 {
+            subsequent_indent
+        } else {
+            ""
+        };
+        let wrapped = adaptive_wrap_line(
+            &line,
+            RtOptions::new(self.width)
+                .initial_indent(initial_indent.into())
+                .subsequent_indent(subsequent_indent.into()),
+        );
+        for line in wrapped {
+            self.push(line_to_static(&line));
+        }
+    }
+
+    fn push_block(&mut self, label: &str, content: &str) {
+        self.push_wrapped_line(label.to_string().bold().into(), "", "");
+
+        if content.is_empty() {
+            return;
+        }
+
+        let content_without_trailing_newline = content.strip_suffix('\n').unwrap_or(content);
+        for source_line in content_without_trailing_newline.split('\n') {
+            if source_line.is_empty() {
+                self.push(Line::from(""));
+            } else {
+                self.push_wrapped_line(Line::from(source_line.to_string()), "  ", "  ");
+            }
+        }
+    }
+
+    fn finish(mut self) -> Vec<Line<'static>> {
+        if self.truncated {
+            let marker: Line<'static> = TRANSCRIPT_ROW_LIMIT_MARKER.red().bold().into();
+            let wrapped = adaptive_wrap_line(&marker, RtOptions::new(self.width));
+            self.lines
+                .extend(wrapped.into_iter().map(|line| line_to_static(&line)));
+        }
+        self.lines
+    }
+}
+
+pub(super) fn render(cell: &McpToolCallCell, width: u16) -> Vec<Line<'static>> {
     let status = match cell.success() {
         Some(true) => "succeeded",
         Some(false) => "failed",
         None => "in progress",
     };
-    let mut lines = vec![
-        "• MCP tool call".bold().into(),
-        format!(
-            "  Tool: {}.{}",
-            cell.invocation.server, cell.invocation.tool
-        )
-        .into(),
-        format!("  Call ID: {}", cell.call_id).into(),
-        format!("  Status: {status}").into(),
-    ];
+    let mut builder = TranscriptBuilder::new(width);
+    builder.push_wrapped_line("• MCP tool call".bold().into(), "", "");
+    builder.push_wrapped_line(
+        format!("Tool: {}.{}", cell.invocation.server, cell.invocation.tool).into(),
+        "  ",
+        "  ",
+    );
+    builder.push_wrapped_line(format!("Call ID: {}", cell.call_id).into(), "  ", "  ");
+    builder.push_wrapped_line(format!("Status: {status}").into(), "  ", "  ");
     if let Some(duration) = cell.duration {
-        lines.push(format!("  Duration: {duration:.2?}").into());
+        builder.push_wrapped_line(format!("Duration: {duration:.2?}").into(), "  ", "  ");
     }
 
     let arguments = cell
@@ -30,7 +108,7 @@ pub(super) fn render(cell: &McpToolCallCell, _width: u16) -> Vec<Line<'static>> 
             serde_json::to_string_pretty(arguments).unwrap_or_else(|_| arguments.to_string())
         })
         .unwrap_or_else(|| "<none>".to_string());
-    push_block(&mut lines, "Arguments:", &arguments);
+    builder.push_block("Arguments:", &arguments);
 
     if let Some(result) = &cell.result {
         match result {
@@ -47,25 +125,27 @@ pub(super) fn render(cell: &McpToolCallCell, _width: u16) -> Vec<Line<'static>> 
                         .as_ref()
                         .is_some_and(|content| saved_output_is_truncated(&content.to_string()))
                 {
-                    lines.push(
+                    builder.push_wrapped_line(
                         "⚠ Saved output is already truncated upstream; missing content cannot be recovered."
                             .red()
                             .bold()
                             .into(),
+                        "",
+                        "",
                     );
                 }
-                push_block(&mut lines, "Result:", &rendered_content.join("\n"));
+                builder.push_block("Result:", &rendered_content.join("\n"));
                 if let Some(structured_content) = structured_content {
                     let content = serde_json::to_string_pretty(structured_content)
                         .unwrap_or_else(|_| structured_content.to_string());
-                    push_block(&mut lines, "Structured content:", &content);
+                    builder.push_block("Structured content:", &content);
                 }
             }
-            Err(err) => push_block(&mut lines, "Result:", &format!("Error: {err}")),
+            Err(err) => builder.push_block("Result:", &format!("Error: {err}")),
         }
     }
 
-    lines
+    builder.finish()
 }
 
 fn render_content_block(block: &serde_json::Value) -> String {
@@ -116,16 +196,4 @@ fn saved_output_is_truncated(text: &str) -> bool {
         || text.contains(" chars truncated…")
         || text.contains(" bytes truncated…")
         || text.contains("…output truncated…")
-}
-
-fn push_block(lines: &mut Vec<Line<'static>>, label: &str, content: &str) {
-    lines.push(label.to_string().bold().into());
-    lines.extend(raw_lines_from_source(content).into_iter().map(|line| {
-        if line.width() == 0 {
-            return Line::from("");
-        }
-        let mut spans = vec!["  ".into()];
-        spans.extend(line.spans);
-        Line::from(spans)
-    }));
 }
