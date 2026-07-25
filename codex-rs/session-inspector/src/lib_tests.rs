@@ -113,6 +113,69 @@ async fn scopes_repeated_call_ids_to_their_turn() {
 }
 
 #[tokio::test]
+async fn uses_persisted_turn_ids_without_turn_lifecycle_events() {
+    let fixture = Fixture::plain(&[
+        response_with_turn(
+            json!({
+                "type": "function_call",
+                "name": "tool",
+                "arguments": "first",
+                "call_id": "same"
+            }),
+            "turn-1",
+        ),
+        response_with_turn(
+            json!({
+                "type": "function_call_output",
+                "call_id": "same",
+                "output": "one"
+            }),
+            "turn-1",
+        ),
+        response_with_turn(
+            json!({
+                "type": "function_call",
+                "name": "tool",
+                "arguments": "second",
+                "call_id": "same"
+            }),
+            "turn-2",
+        ),
+        response_with_turn(
+            json!({
+                "type": "function_call_output",
+                "call_id": "same",
+                "output": "two"
+            }),
+            "turn-2",
+        ),
+    ]);
+
+    let records = read_tool_records(&fixture.path).await.unwrap();
+
+    assert_eq!(
+        records
+            .calls
+            .iter()
+            .map(|call| (
+                call.turn_id.as_deref(),
+                call.result.as_ref().map(|result| &result.body),
+            ))
+            .collect::<Vec<_>>(),
+        vec![
+            (
+                Some("turn-1"),
+                Some(&ToolResultBody::Text("one".to_string()))
+            ),
+            (
+                Some("turn-2"),
+                Some(&ToolResultBody::Text("two".to_string()))
+            ),
+        ]
+    );
+}
+
+#[tokio::test]
 async fn retains_unmatched_outputs() {
     let fixture = Fixture::plain(&[turn_started("turn-1"), function_output("missing", "orphan")]);
 
@@ -143,17 +206,42 @@ async fn reads_zstd_rollouts() {
 
 #[tokio::test]
 async fn preserves_unknown_records_as_raw_json() {
-    let unknown = line(json!({
+    let unknown_outer = line(json!({
         "type": "future_record",
         "payload": {"text": "λ"}
     }));
-    let fixture = Fixture::plain(std::slice::from_ref(&unknown));
+    let unknown_nested = line(json!({
+        "type": "event_msg",
+        "payload": {
+            "type": "future_event",
+            "text": "still inspect later records"
+        }
+    }));
+    let fixture = Fixture::plain(&[
+        unknown_outer.clone(),
+        unknown_nested.clone(),
+        turn_started("turn-1"),
+        function_call("call-1", "after unknown"),
+        function_output("call-1", "ok"),
+    ]);
 
     let records = read_tool_records(&fixture.path).await.unwrap();
 
-    assert_eq!(records.unknown_records.len(), 1);
-    assert_eq!(records.unknown_records[0].raw, unknown);
+    assert_eq!(
+        records
+            .unknown_records
+            .iter()
+            .map(|record| &record.raw)
+            .collect::<Vec<_>>(),
+        vec![&unknown_outer, &unknown_nested]
+    );
     assert_eq!(records.unknown_records[0].source.line, 1);
+    assert_eq!(records.unknown_records[1].source.line, 2);
+    assert_eq!(records.calls.len(), 1);
+    assert_eq!(
+        records.calls[0].result.as_ref().map(|result| &result.body),
+        Some(&ToolResultBody::Text("ok".to_string()))
+    );
 }
 
 #[tokio::test]
@@ -216,6 +304,14 @@ fn function_output(call_id: &str, output: &str) -> Value {
 
 fn response(payload: Value) -> Value {
     line(json!({"type": "response_item", "payload": payload}))
+}
+
+fn response_with_turn(mut payload: Value, turn_id: &str) -> Value {
+    payload.as_object_mut().unwrap().insert(
+        "internal_chat_message_metadata_passthrough".to_string(),
+        json!({"turn_id": turn_id}),
+    );
+    response(payload)
 }
 
 fn line(item: Value) -> Value {

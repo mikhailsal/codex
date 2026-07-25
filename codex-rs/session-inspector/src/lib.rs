@@ -143,7 +143,7 @@ pub async fn read_tool_records(
         })?;
         let line = match serde_json::from_value::<RolloutLine>(raw.clone()) {
             Ok(line) => line,
-            Err(_source) if !is_known_rollout_type(&raw) => {
+            Err(_) => {
                 records.unknown_records.push(UnknownRolloutRecord {
                     source: RecordSource {
                         path: path.clone(),
@@ -158,13 +158,6 @@ pub async fn read_tool_records(
                     raw,
                 });
                 continue;
-            }
-            Err(source) => {
-                return Err(SessionInspectorError::InvalidJson {
-                    path: path.clone(),
-                    line: line_number,
-                    source,
-                });
             }
         };
         let source = RecordSource {
@@ -190,10 +183,14 @@ pub async fn read_tool_records(
             }
             RolloutItem::ResponseItem(item) => {
                 let raw_output = raw.pointer("/payload/output").cloned();
+                let turn_id = item
+                    .turn_id()
+                    .map(str::to_owned)
+                    .or_else(|| current_turn_id.clone());
                 normalize_response_item(
                     item,
                     raw_output,
-                    current_turn_id.clone(),
+                    turn_id,
                     source,
                     RecordCollector {
                         records: &mut records,
@@ -212,22 +209,6 @@ pub async fn read_tool_records(
     }
 
     Ok(records)
-}
-
-fn is_known_rollout_type(raw: &Value) -> bool {
-    matches!(
-        raw.get("type").and_then(Value::as_str),
-        Some(
-            "session_meta"
-                | "response_item"
-                | "inter_agent_communication"
-                | "inter_agent_communication_metadata"
-                | "compacted"
-                | "turn_context"
-                | "world_state"
-                | "event_msg"
-        )
-    )
 }
 
 fn normalize_response_item(
