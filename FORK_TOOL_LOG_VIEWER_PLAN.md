@@ -2,7 +2,7 @@
 
 ## Статус выполнения
 
-Обновлено: 2026-07-25.
+Обновлено: 2026-07-26.
 
 ### Инфраструктура форка
 
@@ -18,7 +18,7 @@
 | 1 | Полный MCP transcript в `Ctrl+T` + banner усечения | `tool-transcript/01-mcp-full-transcript` | [#1](https://github.com/mikhailsal/codex/pull/1) | смержен 2026-07-25 |
 | 2 | Reader и `ToolCallRecord` в `codex-session-inspector` | `tool-transcript/02-raw-model` | [#2](https://github.com/mikhailsal/codex/pull/2) | смержен 2026-07-25 |
 | 3 | Truncation/completeness detector + TUI на общем API | `tool-transcript/03-completeness-detector` | [#3](https://github.com/mikhailsal/codex/pull/3) | смержен 2026-07-25 |
-| 4 | Function/custom (`DynamicToolCall`) full transcript в TUI | `tool-transcript/04-tui-function-custom` | — | в работе 2026-07-25 |
+| 4 | Function/custom (`DynamicToolCall`) full transcript в TUI | `tool-transcript/04-tui-function-custom` | [#4](https://github.com/mikhailsal/codex/pull/4) | открыт, готов к review 2026-07-26 |
 | 5+ | Lazy pager, CLI, web, reasoning, transport A/B | — | — | не начат |
 
 Текущая ветка: `tool-transcript/04-tui-function-custom`.
@@ -800,7 +800,7 @@ live UI и rollout replay.
 2. [x] reader и `ToolCallRecord` — PR #2;
 3. [x] truncation/completeness detector — PR #3;
 4. [x] MCP full transcript — PR #1; banner переведён на общий detector в PR #3;
-5. [ ] function/custom (`DynamicToolCall`) full transcript — PR #4;
+5. [ ] function/custom (`DynamicToolCall`) full transcript — PR #4 (открыт);
 6. [ ] lazy pager;
 7. [ ] CLI list/show;
 8. [ ] CLI filters/export;
