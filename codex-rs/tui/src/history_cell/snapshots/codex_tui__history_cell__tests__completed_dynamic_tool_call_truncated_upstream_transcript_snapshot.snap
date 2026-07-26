@@ -1,0 +1,18 @@
+---
+source: tui/src/history_cell/tests.rs
+expression: transcript
+---
+• Tool call
+  Tool: tools/fetch
+  Call ID: call-dynamic-truncated
+  Status: succeeded
+  Duration: 90.00ms
+Arguments:
+  {
+    "url": "https://example.com/data"
+  }
+⚠ Saved output is already truncated upstream; missing content cannot be
+recovered.
+Result:
+  Warning: truncated output (original token count: 100)
+  head…50 tokens truncated…tail

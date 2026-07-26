@@ -1,0 +1,17 @@
+---
+source: tui/src/history_cell/tests.rs
+expression: transcript
+---
+• Tool call
+  Tool: capture
+  Call ID: call-dynamic-media
+  Status: succeeded
+  Duration: 40.00ms
+Arguments:
+  {
+    "mode": "media"
+  }
+Result:
+  caption
+  <image content: 8 encoded bytes>
+  <audio content: 8 encoded bytes>
