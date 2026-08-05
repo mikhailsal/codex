@@ -1,0 +1,7 @@
+---
+source: tui/src/chatwidget/tests/history_replay.rs
+assertion_line: 1318
+expression: tool_blob
+---
+• Called workspace/inspect({"path":"synthetic-session.jsonl"})
+  └ interrupted

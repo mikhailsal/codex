@@ -1288,6 +1288,37 @@ async fn live_and_replayed_dynamic_tool_calls_have_matching_full_transcripts() {
 }
 
 #[tokio::test]
+async fn interrupt_dynamic_tool_marks_failed_snapshot() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    let _ = drain_insert_history(&mut rx);
+
+    chat.on_dynamic_tool_call_started(AppServerThreadItem::DynamicToolCall {
+        id: "dynamic-interrupt".to_string(),
+        namespace: Some("workspace".to_string()),
+        tool: "inspect".to_string(),
+        arguments: json!({"path": "synthetic-session.jsonl"}),
+        status: codex_app_server_protocol::DynamicToolCallStatus::InProgress,
+        content_items: None,
+        success: None,
+        duration_ms: None,
+    });
+
+    handle_turn_interrupted(&mut chat, "turn-1");
+
+    let cells = drain_insert_history(&mut rx);
+    assert!(
+        !cells.is_empty(),
+        "expected finalized dynamic tool cell to be inserted into history"
+    );
+    let tool_blob = lines_to_single_string(&cells[0]);
+    assert!(
+        tool_blob.contains("interrupted"),
+        "expected interrupted marker in dynamic tool cell: {tool_blob}"
+    );
+    assert_chatwidget_snapshot!("interrupt_dynamic_tool_marks_failed", tool_blob);
+}
+
+#[tokio::test]
 async fn deferred_mcp_lifecycle_events_keep_fifo_after_stream_finishes() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     let cwd = chat.config.cwd.to_path_buf();

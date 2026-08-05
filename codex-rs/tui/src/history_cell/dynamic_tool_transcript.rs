@@ -105,6 +105,29 @@ impl TranscriptBuilder {
         }
     }
 
+    /// Push one logical source line under the result/arguments indent, truncating
+    /// the borrowed `&str` before allocating a `Line` when past the row budget.
+    fn push_indented_source_line(&mut self, source_line: &str) {
+        if self.truncated || self.remaining_content_rows() == 0 {
+            self.truncated = true;
+            return;
+        }
+        if source_line.is_empty() {
+            self.push(Line::from(""));
+            return;
+        }
+
+        let max_cols = self
+            .remaining_content_rows()
+            .saturating_add(1)
+            .saturating_mul(self.width.max(1));
+        let (prefix, rest, _) = take_prefix_by_width(source_line, max_cols);
+        if !rest.is_empty() {
+            self.truncated = true;
+        }
+        self.push_wrapped_line(Line::from(prefix), "  ", "  ");
+    }
+
     fn push_block(&mut self, label: &str, content: &str) {
         if self.truncated {
             return;
@@ -117,14 +140,9 @@ impl TranscriptBuilder {
 
         let content_without_trailing_newline = content.strip_suffix('\n').unwrap_or(content);
         for source_line in content_without_trailing_newline.split('\n') {
-            if self.truncated || self.remaining_content_rows() == 0 {
-                self.truncated = true;
+            self.push_indented_source_line(source_line);
+            if self.truncated {
                 break;
-            }
-            if source_line.is_empty() {
-                self.push(Line::from(""));
-            } else {
-                self.push_wrapped_line(Line::from(source_line.to_string()), "  ", "  ");
             }
         }
     }
@@ -164,11 +182,8 @@ pub(super) fn render(cell: &DynamicToolCallCell, width: u16) -> Vec<Line<'static
     builder.push_block("Arguments:", &arguments);
 
     if let Some(content_items) = cell.content_items() {
-        let rendered = content_items
-            .iter()
-            .map(render_content_item)
-            .collect::<Vec<_>>();
-        if rendered.iter().any(|text| saved_output_is_truncated(text)) {
+        // Detect upstream truncation markers without cloning every payload first.
+        if content_items.iter().any(content_item_is_upstream_truncated) {
             builder.push_wrapped_line(
                 "⚠ Saved output is already truncated upstream; missing content cannot be recovered."
                     .red()
@@ -178,10 +193,19 @@ pub(super) fn render(cell: &DynamicToolCallCell, width: u16) -> Vec<Line<'static
                 "",
             );
         }
-        if rendered.is_empty() {
+        if content_items.is_empty() {
             builder.push_block("Result:", "<empty>");
         } else {
-            builder.push_block("Result:", &rendered.join("\n"));
+            // Stream items into the builder so the row budget can stop before we
+            // allocate owned copies of the entire saved result on every Ctrl+T draw.
+            builder.push_wrapped_line("Result:".to_string().bold().into(), "", "");
+            for item in content_items {
+                if builder.truncated || builder.remaining_content_rows() == 0 {
+                    builder.truncated = true;
+                    break;
+                }
+                push_content_item(&mut builder, item);
+            }
         }
     } else if cell.success().is_some() {
         builder.push_block("Result:", "<none>");
@@ -190,21 +214,38 @@ pub(super) fn render(cell: &DynamicToolCallCell, width: u16) -> Vec<Line<'static
     builder.finish()
 }
 
-fn render_content_item(item: &DynamicToolCallOutputContentItem) -> String {
+fn push_content_item(builder: &mut TranscriptBuilder, item: &DynamicToolCallOutputContentItem) {
     match item {
-        DynamicToolCallOutputContentItem::InputText { text } => text.clone(),
+        DynamicToolCallOutputContentItem::InputText { text } => {
+            let content = text.strip_suffix('\n').unwrap_or(text);
+            for source_line in content.split('\n') {
+                if builder.truncated {
+                    break;
+                }
+                builder.push_indented_source_line(source_line);
+            }
+        }
         DynamicToolCallOutputContentItem::InputImage { image_url } => {
-            format!(
+            builder.push_indented_source_line(&format!(
                 "<image content: {} encoded bytes>",
                 encoded_payload_len(image_url)
-            )
+            ));
         }
         DynamicToolCallOutputContentItem::InputAudio { audio_url } => {
-            format!(
+            builder.push_indented_source_line(&format!(
                 "<audio content: {} encoded bytes>",
                 encoded_payload_len(audio_url)
-            )
+            ));
         }
+    }
+}
+
+fn content_item_is_upstream_truncated(item: &DynamicToolCallOutputContentItem) -> bool {
+    match item {
+        DynamicToolCallOutputContentItem::InputText { text } => saved_output_is_truncated(text),
+        // Media metadata placeholders do not carry the original truncated body.
+        DynamicToolCallOutputContentItem::InputImage { .. }
+        | DynamicToolCallOutputContentItem::InputAudio { .. } => false,
     }
 }
 
