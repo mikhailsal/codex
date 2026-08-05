@@ -2,7 +2,7 @@
 
 ## Статус выполнения
 
-Обновлено: 2026-08-05.
+Обновлено: 2026-08-05 (stage 7 / CLI list-show).
 
 ### Инфраструктура форка
 
@@ -11,63 +11,81 @@
 - [x] Remotes: `upstream` → `openai/codex`, `origin` → `mikhailsal/codex`.
 - [ ] Полная синхронизация `main` с актуальным `upstream/main` (форк отстаёт; отдельный merge-этап, не смешивать с функциональными PR).
 
-### Функциональные PR (порядок из §14)
+### Функциональные PR (порядок из §14; GitHub № ≠ stage №)
 
-| # | Тема | Ветка | PR | Статус |
+| Stage | Тема | Ветка | GitHub PR | Статус |
 | --- | --- | --- | --- | --- |
 | 1 | Полный MCP transcript в `Ctrl+T` + banner усечения | `tool-transcript/01-mcp-full-transcript` | [#1](https://github.com/mikhailsal/codex/pull/1) | смержен 2026-07-25 |
 | 2 | Reader и `ToolCallRecord` в `codex-session-inspector` | `tool-transcript/02-raw-model` | [#2](https://github.com/mikhailsal/codex/pull/2) | смержен 2026-07-25 |
 | 3 | Truncation/completeness detector + TUI на общем API | `tool-transcript/03-completeness-detector` | [#3](https://github.com/mikhailsal/codex/pull/3) | смержен 2026-07-25 |
 | 4 | Function/custom (`DynamicToolCall`) full transcript в TUI | `tool-transcript/04-tui-function-custom` | [#4](https://github.com/mikhailsal/codex/pull/4) | смержен 2026-07-26 |
-| 5 | Lazy pager для больших transcript outputs | `tool-transcript/05-lazy-pager` | [#6](https://github.com/mikhailsal/codex/pull/6) | открыт, готов к review 2026-08-05 |
-| 6 | CLI `codex debug session list/show/tools/tool` | `tool-transcript/06-cli-debug-session` | [#5](https://github.com/mikhailsal/codex/pull/5) | открыт вне очереди (не блокирует #5 plan stage) |
-| 7+ | CLI filters/export, web, reasoning, transport A/B | — | — | не начат |
+| 5 | Lazy pager для больших transcript outputs | `tool-transcript/05-lazy-pager` | [#6](https://github.com/mikhailsal/codex/pull/6) | смержен 2026-08-05 |
+| 6 | CLI stub: `debug session <FILE>` → Debug dump | `tool-transcript/06-cli-debug-session` | [#5](https://github.com/mikhailsal/codex/pull/5) | смержен 2026-08-05 (неполный) |
+| **7** | **CLI `list` / `show` / `tools` / `tool`** | `tool-transcript/07-cli-list-show` | [#7](https://github.com/mikhailsal/codex/pull/7) | открыт, готов к review 2026-08-05 |
+| 8 | CLI filters/export (`--raw`/`--pretty`/`--head`/`export`) | — | — | не начат |
+| 9+ | loopback web, reasoning, transport A/B | — | — | не начат |
 
-Текущая ветка: `tool-transcript/05-lazy-pager`.
+Текущая ветка: `tool-transcript/07-cli-list-show`.
 
 ### Что уже есть в `main` форка
 
 - `Ctrl+T`: полный MCP + DynamicToolCall transcript; compact chat по-прежнему `TOOL_CALL_MAX_LINES`.
 - Truncation banner через `codex_session_inspector::text_contains_truncation_marker`.
 - Crate `codex-session-inspector`: plain/zstd rollout, pairing `(turn_id, call_id)`, orphans, unknown raw JSON, `Completeness`.
+- Lazy Ctrl+T pager: windowed `transcript_lines_window` / `render_scrolled` без tall buffer.
 - Snapshots + live/replay parity для MCP и DynamicToolCall.
 - Hard cap ~`u16::MAX` transcript rows с marker (защита от overflow высоты pager).
+- **CLI stub only:** `codex debug session <SESSION_FILE>` печатает `{:#?}` records — без list/show/tools/tool.
 
 **Семантика `Complete`:** в сохранённом тексте нет известного маркера discard. Это не доказательство, что исходный output был меньше любого лимита.
 
-### PR stage 5 / ветка `05-lazy-pager` (текущий этап) — цели и границы
+### Stage 5 (lazy pager) — завершён
 
-**Проблема:** даже с row-cap `Ctrl+T` на каждом draw/`desired_height` строит полный `Vec<Line>` для tool output и при offset-scroll аллоцирует tall buffer `scroll_offset + viewport`. Большой MCP/DynamicToolCall результат блокирует TUI и раздувает память.
+См. [mikhailsal/codex#6](https://github.com/mikhailsal/codex/pull/6). Асинхронная подгрузка / disk chunks / поиск — следующие этапы.
 
-**Входит (первый reviewable slice):**
+### PR stage 7 / ветка `07-cli-list-show` (текущий этап) — цели и границы
 
-- общий `LazyTranscript`: header как готовые lines, body как текст; wrap on demand;
-- `HistoryCell::transcript_row_count` / `transcript_lines_window` (+ overrides у MCP/DynamicToolCall);
-- `Renderable::render_scrolled` + pager `render_offset_content` без tall buffer для cell path;
-- MCP и DynamicToolCall transcript на `LazyTranscript` (поведение/snapshots сохраняются);
-- тесты: window ≡ slice(full), bounded window на huge output, offset render.
+**Проблема:** stub PR #5 не даёт найти session по id/`--last`, не показывает таблицу сессий и не отличает summary tool list от полного dump одного call. Без этого нельзя проверить inspector из консоли и готовить web/export.
 
-**Не входит (следующие PR):**
+**Входит (reviewable slice §14.7 / §8 list-show):**
 
-- async load / progress / cancel / поиск по result;
-- чтение payload с диска по chunk (данные tool cell уже в RAM);
-- shell/`ExecCell` truncation banner;
-- CLI / web / reasoning / transport.
+- subcommands: `list`, `show`, `tools`, `tool` (замена file-only stub);
+- resolve: `--last`, thread UUID, `--file PATH`, опционально `--archived`;
+- `list`: метаданные из `codex_rollout::get_threads` (без полного `read_tool_records` на каждый файл);
+- `show`: meta + counts (calls / truncated / orphans / unknown);
+- `tools`: таблица call_id / name / kind / completeness / turn — без полного output;
+- `tool`: один call — arguments + result + completeness banner; `--json`;
+- exit codes: missing session=2, missing call=3, parse error=4;
+- CLI tests на synthetic rollouts под temp `CODEX_HOME`.
 
-### Прогресс по stage 5
+**Не входит (stage 8+):**
 
-- [x] Ветка от `origin/main` (после merge PR #4).
-- [x] `lazy_transcript` + pager wiring (`render_scrolled`, windowed HistoryCell API).
-- [x] MCP/Dynamic на lazy document.
-- [x] Тесты + `just test -p codex-tui` (targeted) / `fmt` / `fix`.
-- [x] PR открыт: [mikhailsal/codex#6](https://github.com/mikhailsal/codex/pull/6).
+- filters (`--tool`, status, time), `--head`/`--tail`/`--full`, `export`;
+- interactive `debug session tui`;
+- loopback web / reasoning / transport.
 
-### Дальше после stage 5
+### Прогресс по stage 7
 
-1. CLI `codex debug session …` (уже есть черновик PR #5 — после merge lazy pager привести к §14).
-2. CLI filters/export.
-3. Loopback web viewer.
-4. Reasoning / transport A/B — отдельными PR.
+- [x] Ветка от `origin/main` (после merge PR #5 + #6).
+- [x] Модуль `cli/src/debug_session.rs` + wiring в `main.rs` (замена file-only stub).
+- [x] Точечные тесты: `systemd-run --user --scope -p MemoryHigh=6G -p MemoryMax=8G
+  -p MemorySwapMax=1G -- just test -p codex-cli --test debug_session --build-jobs 1
+  --test-threads 1` (4/4 pass) / `fmt` / `just fix -p codex-cli -j1` в том же memory scope.
+- [x] PR открыт: [mikhailsal/codex#7](https://github.com/mikhailsal/codex/pull/7).
+
+**Замечания реализации stage 7:**
+
+- `tool` принимает `--call <CALL_ID>` (не второй positional): clap debug assert запрещает
+  optional positional перед required.
+- `list`/`--last` опираются на `get_threads`, который требует session_meta + discoverable
+  preview (как upstream listing); fixtures добавляют `user_message`.
+- Полный suite `codex-cli` локально не гонялся (§13.0).
+
+### Дальше после stage 7
+
+1. CLI filters/export (stage 8).
+2. Loopback web viewer (stage 9).
+3. Reasoning / transport A/B — отдельными PR.
 
 ## 1. Цель
 
@@ -161,10 +179,11 @@ git fetch origin
 2. `tool-transcript/02-raw-model` — PR #2 (смержен)
 3. `tool-transcript/03-completeness-detector` — PR #3 (смержен)
 4. `tool-transcript/04-tui-function-custom` — PR #4 (смержен)
-5. `tool-transcript/05-lazy-pager` — stage 5 (текущий)
-6. `tool-transcript/06-cli-debug-session` — CLI (§8; GitHub PR #5 открыт вне очереди)
-7. `tool-transcript/07-local-web`
-8. `tool-transcript/08-console-ux` / reasoning / transport — по мере готовности
+5. `tool-transcript/05-lazy-pager` — PR #6 (смержен)
+6. `tool-transcript/06-cli-debug-session` — PR #5 stub (смержен; заменяется stage 7)
+7. `tool-transcript/07-cli-list-show` — stage 7 (текущий): list/show/tools/tool
+8. `tool-transcript/08-cli-filters-export`
+9. `tool-transcript/09-local-web` / reasoning / transport — по мере готовности
 
 Каждая ветка создаётся от актуального `upstream/main`. Изменения предыдущего этапа либо сначала
 сливаются в `main` форка, либо последующие PR явно оформляются как stacked PR.
@@ -756,6 +775,49 @@ JSON.
 
 ## 13. План тестирования
 
+### 13.0. Обязательная локальная политика тестов и памяти
+
+Во время работы по этому плану не запускать полный набор тестов локально. В частности, запрещены
+голые `just test`, `just test -p codex-cli`, `cargo test`, `--workspace`, `--all-targets` и
+`--all-features`. Полный crate/workspace suite оставлять CI; локальный полный прогон допустим только
+после отдельного явного согласования с пользователем.
+
+Проверять только изменённый test target и, по возможности, конкретный тест:
+
+- `cli/tests/debug_session.rs`:
+  `just test -p codex-cli --test debug_session --build-jobs 1 --test-threads 1`;
+- конкретный integration test: к предыдущей команде добавить его точное имя или достаточно узкий
+  nextest-фильтр;
+- unit tests библиотеки: `just test -p <crate> --lib <точное_имя_теста> --build-jobs 1
+  --test-threads 1`;
+- unit tests бинарника: `just test -p <crate> --bin <bin> <точное_имя_теста> --build-jobs 1
+  --test-threads 1`.
+
+Перед запуском определить минимальный target по изменённым файлам и существующим тестам. Не
+компенсировать неуверенность расширением прогона: сначала прочитать `Cargo.toml`, test module и
+вывод `cargo nextest list` для выбранного target. Тестовые команды выполнять строго
+последовательно; не запускать одновременно тесты, `just fix`, сборку или несколько subagents с
+Rust-командами.
+
+Ограничения памяти обязательны:
+
+- всегда задавать `--build-jobs 1`: это не даёт Cargo одновременно запустить несколько тяжёлых
+  `rustc`/`rust-lld`;
+- всегда задавать `--test-threads 1`: тестовые бинарники также выполняются последовательно;
+- перед тяжёлой Rust-командой проверять `free -h`; если `MemAvailable` меньше 6 GiB или swap уже
+  почти заполнен, команду не запускать до освобождения ресурсов;
+- не увеличивать число jobs ради ускорения и не запускать повторную команду, пока предыдущая
+  действительно не завершилась;
+- если доступен user systemd/cgroup v2, для потенциально тяжёлой проверки дополнительно ограничить
+  всю команду, например:
+  `systemd-run --user --scope -p MemoryHigh=6G -p MemoryMax=8G -p MemorySwapMax=1G -- just test
+  -p codex-cli --test debug_session --build-jobs 1 --test-threads 1`.
+
+`MemoryHigh` заранее включает throttling/reclaim внутри scope, а `MemoryMax` не позволяет сборке
+забрать всю RAM компьютера; `MemorySwapMax` ограничивает swap-thrashing. Если такой scope завершит
+сборку по памяти, это считается ресурсным ограничением: не повторять прогон без лимита, а ещё
+сузить target/test или вынести полный прогон в CI.
+
 ### Unit
 
 - Парсинг и pairing records.
@@ -808,8 +870,8 @@ live UI и rollout replay.
 3. [x] truncation/completeness detector — PR #3;
 4. [x] MCP full transcript — PR #1; banner переведён на общий detector в PR #3;
 5. [x] function/custom (`DynamicToolCall`) full transcript — PR #4 (смержен);
-6. [~] lazy pager — stage 5 / `tool-transcript/05-lazy-pager` — [PR #6](https://github.com/mikhailsal/codex/pull/6) открыт;
-7. [ ] CLI list/show — `tool-transcript/06-cli-debug-session` (GitHub PR #5, вне очереди);
+6. [x] lazy pager — stage 5 / [PR #6](https://github.com/mikhailsal/codex/pull/6) (смержен);
+7. [x] CLI list/show — stage 7 / `tool-transcript/07-cli-list-show` — [PR #7](https://github.com/mikhailsal/codex/pull/7) (заменяет stub [PR #5](https://github.com/mikhailsal/codex/pull/5));
 8. [ ] CLI filters/export;
 9. [ ] loopback backend;
 10. [ ] минимальный web UI;
