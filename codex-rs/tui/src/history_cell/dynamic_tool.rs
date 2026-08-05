@@ -265,6 +265,34 @@ impl HistoryCell for DynamicToolCallCell {
         transcript::render(self, width)
     }
 
+    fn transcript_row_count(&self, width: u16) -> usize {
+        transcript::build(self, width).row_count(width)
+    }
+
+    fn transcript_lines_window(
+        &self,
+        width: u16,
+        start_row: usize,
+        max_rows: usize,
+    ) -> Vec<Line<'static>> {
+        transcript::build(self, width).lines_window(width, start_row, max_rows)
+    }
+
+    fn transcript_hyperlink_lines_window(
+        &self,
+        width: u16,
+        start_row: usize,
+        max_rows: usize,
+    ) -> Vec<HyperlinkLine> {
+        plain_hyperlink_lines(self.transcript_lines_window(width, start_row, max_rows))
+    }
+
+    fn desired_transcript_height(&self, width: u16) -> u16 {
+        self.transcript_row_count(width)
+            .try_into()
+            .unwrap_or(u16::MAX)
+    }
+
     fn transcript_animation_tick(&self) -> Option<u64> {
         None
     }

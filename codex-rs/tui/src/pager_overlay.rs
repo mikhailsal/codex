@@ -389,6 +389,9 @@ impl Renderable for CachedRenderable {
         }
         self.height.get().unwrap_or(0)
     }
+    fn render_scrolled(&self, area: Rect, buf: &mut Buffer, row_offset: u16) {
+        self.renderable.render_scrolled(area, buf, row_offset);
+    }
 }
 
 struct CellRenderable {
@@ -398,7 +401,22 @@ struct CellRenderable {
 
 impl Renderable for CellRenderable {
     fn render(&self, area: Rect, buf: &mut Buffer) {
-        let hyperlink_lines = self.cell.transcript_hyperlink_lines(area.width);
+        self.render_scrolled(area, buf, 0);
+    }
+
+    fn desired_height(&self, width: u16) -> u16 {
+        self.cell.desired_transcript_height(width)
+    }
+
+    fn render_scrolled(&self, area: Rect, buf: &mut Buffer, row_offset: u16) {
+        if area.height == 0 || area.width == 0 {
+            return;
+        }
+        let hyperlink_lines = self.cell.transcript_hyperlink_lines_window(
+            area.width,
+            usize::from(row_offset),
+            usize::from(area.height),
+        );
         let style = if self.cell.as_any().is::<UserHistoryCell>() {
             if self.highlighted {
                 user_message_style().reversed()
@@ -413,10 +431,6 @@ impl Renderable for CellRenderable {
             .wrap(Wrap { trim: false });
         p.render(area, buf);
         mark_buffer_hyperlinks(buf, area, &hyperlink_lines, /*scroll_rows*/ 0);
-    }
-
-    fn desired_height(&self, width: u16) -> u16 {
-        self.cell.desired_transcript_height(width)
     }
 }
 
@@ -918,25 +932,16 @@ fn render_offset_content(
     renderable: &dyn Renderable,
     scroll_offset: u16,
 ) -> u16 {
-    let height = renderable.desired_height(area.width);
-    let mut tall_buf = Buffer::empty(Rect::new(
-        0,
-        0,
-        area.width,
-        height.min(area.height + scroll_offset),
-    ));
-    renderable.render(*tall_buf.area(), &mut tall_buf);
-    let copy_height = area
-        .height
-        .min(tall_buf.area().height.saturating_sub(scroll_offset));
-    for y in 0..copy_height {
-        let src_y = y + scroll_offset;
-        for x in 0..area.width {
-            buf[(area.x + x, area.y + y)] = tall_buf[(x, src_y)].clone();
-        }
+    let remaining = renderable
+        .desired_height(area.width)
+        .saturating_sub(scroll_offset);
+    let draw_height = remaining.min(area.height);
+    if draw_height == 0 || area.width == 0 {
+        return 0;
     }
-
-    copy_height
+    let draw_area = Rect::new(area.x, area.y, area.width, draw_height);
+    renderable.render_scrolled(draw_area, buf, scroll_offset);
+    draw_height
 }
 
 #[cfg(test)]
@@ -1091,6 +1096,35 @@ mod tests {
         term.draw(|f| overlay.render(f.area(), f.buffer_mut()))
             .expect("draw");
         assert_snapshot!(term.backend());
+    }
+
+    #[test]
+    fn transcript_overlay_scrolled_render_does_not_require_tall_buffer() {
+        // Pager offset painting should show the scrolled window without building a
+        // full-height offscreen buffer for the cell.
+        let mut overlay = transcript_overlay(vec![Arc::new(TestCell {
+            lines: (0..80).map(|i| Line::from(format!("row-{i:02}"))).collect(),
+        })]);
+        overlay.view.scroll_offset = 20;
+        let area = Rect::new(
+            /*x*/ 0, /*y*/ 0, /*width*/ 40, /*height*/ 10,
+        );
+        let mut buf = Buffer::empty(area);
+        overlay.render(area, &mut buf);
+
+        let rendered: String = area
+            .positions()
+            .map(|position| buf[position].symbol().to_string())
+            .collect::<Vec<_>>()
+            .join("");
+        assert!(
+            rendered.contains("row-20"),
+            "expected scrolled window to include row-20, got {rendered:?}"
+        );
+        assert!(
+            !rendered.contains("row-00"),
+            "scrolled window should not still show the first row: {rendered:?}"
+        );
     }
 
     #[test]

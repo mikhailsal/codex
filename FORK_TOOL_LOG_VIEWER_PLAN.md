@@ -2,14 +2,14 @@
 
 ## Статус выполнения
 
-Обновлено: 2026-07-26.
+Обновлено: 2026-08-05.
 
 ### Инфраструктура форка
 
 - [x] GitHub CLI авторизован как `mikhailsal`.
 - [x] Форк `mikhailsal/codex` создан и проверен.
 - [x] Remotes: `upstream` → `openai/codex`, `origin` → `mikhailsal/codex`.
-- [x] `main` форка синхронизируется с `upstream/main` перед каждым этапом.
+- [ ] Полная синхронизация `main` с актуальным `upstream/main` (форк отстаёт; отдельный merge-этап, не смешивать с функциональными PR).
 
 ### Функциональные PR (порядок из §14)
 
@@ -18,50 +18,56 @@
 | 1 | Полный MCP transcript в `Ctrl+T` + banner усечения | `tool-transcript/01-mcp-full-transcript` | [#1](https://github.com/mikhailsal/codex/pull/1) | смержен 2026-07-25 |
 | 2 | Reader и `ToolCallRecord` в `codex-session-inspector` | `tool-transcript/02-raw-model` | [#2](https://github.com/mikhailsal/codex/pull/2) | смержен 2026-07-25 |
 | 3 | Truncation/completeness detector + TUI на общем API | `tool-transcript/03-completeness-detector` | [#3](https://github.com/mikhailsal/codex/pull/3) | смержен 2026-07-25 |
-| 4 | Function/custom (`DynamicToolCall`) full transcript в TUI | `tool-transcript/04-tui-function-custom` | [#4](https://github.com/mikhailsal/codex/pull/4) | открыт, готов к review 2026-07-26 |
-| 5+ | Lazy pager, CLI, web, reasoning, transport A/B | — | — | не начат |
+| 4 | Function/custom (`DynamicToolCall`) full transcript в TUI | `tool-transcript/04-tui-function-custom` | [#4](https://github.com/mikhailsal/codex/pull/4) | смержен 2026-07-26 |
+| 5 | Lazy pager для больших transcript outputs | `tool-transcript/05-lazy-pager` | — | **в работе** |
+| 6 | CLI `codex debug session list/show/tools/tool` | `tool-transcript/06-cli-debug-session` | [#5](https://github.com/mikhailsal/codex/pull/5) | открыт вне очереди (не блокирует #5 plan stage) |
+| 7+ | CLI filters/export, web, reasoning, transport A/B | — | — | не начат |
 
-Текущая ветка: `tool-transcript/04-tui-function-custom`.
+Текущая ветка: `tool-transcript/05-lazy-pager`.
 
 ### Что уже есть в `main` форка
 
-- `Ctrl+T` показывает полный MCP result без лимита в 5 строк; truncation banner через `codex_session_inspector::text_contains_truncation_marker`.
-- Crate `codex-session-inspector`: чтение plain/zstd rollout, pairing call↔output по `(turn_id, call_id)`, orphan outputs, unknown records как raw JSON, `Completeness` + marker metadata.
-- Characterization snapshots для MCP transcript.
-
-### PR #3 (смержен) — кратко
-
-- модуль `completeness` + поле на `ToolCallRecord` / `OrphanToolOutput`;
-- TUI MCP transcript переведён на общий detector;
-- исправлен false positive на mention-only `100 chars truncated…` без ведущего `…`.
+- `Ctrl+T`: полный MCP + DynamicToolCall transcript; compact chat по-прежнему `TOOL_CALL_MAX_LINES`.
+- Truncation banner через `codex_session_inspector::text_contains_truncation_marker`.
+- Crate `codex-session-inspector`: plain/zstd rollout, pairing `(turn_id, call_id)`, orphans, unknown raw JSON, `Completeness`.
+- Snapshots + live/replay parity для MCP и DynamicToolCall.
+- Hard cap ~`u16::MAX` transcript rows с marker (защита от overflow высоты pager).
 
 **Семантика `Complete`:** в сохранённом тексте нет известного маркера discard. Это не доказательство, что исходный output был меньше любого лимита.
 
-### PR #4 (текущий этап) — цели и границы
+### PR stage 5 / ветка `05-lazy-pager` (текущий этап) — цели и границы
 
-**Контекст:** app-server отдаёт generic function/custom tools как `ThreadItem::DynamicToolCall`. До этого PR TUI игнорировал их в history (live start и replay — no-op), хотя agent-status feed уже умел их кратко суммировать. Специализированные tools (shell → `CommandExecution`/`ExecCell`, MCP, web search, patches) уже имеют свои cells; этот PR закрывает именно generic gap.
+**Проблема:** даже с row-cap `Ctrl+T` на каждом draw/`desired_height` строит полный `Vec<Line>` для tool output и при offset-scroll аллоцирует tall buffer `scroll_offset + viewport`. Большой MCP/DynamicToolCall результат блокирует TUI и раздувает память.
 
-**Входит:**
+**Входит (первый reviewable slice):**
 
-- `DynamicToolCallCell` с компактным `display_lines()` (лимит `TOOL_CALL_MAX_LINES`) и полным `transcript_lines()`;
-- wiring live start/complete, replay, deferred interrupt queue, `mark_failed` при abort;
-- transcript: tool name (+ optional namespace), call ID, status, duration, pretty arguments, полный text result, metadata для image/audio без dump URL/base64;
-- upstream truncation banner через shared `text_contains_truncation_marker`;
-- snapshots + live/replay parity test.
+- общий `LazyTranscript`: header как готовые lines, body как текст; wrap on demand;
+- `HistoryCell::transcript_row_count` / `transcript_lines_window` (+ overrides у MCP/DynamicToolCall);
+- `Renderable::render_scrolled` + pager `render_offset_content` без tall buffer для cell path;
+- MCP и DynamicToolCall transcript на `LazyTranscript` (поведение/snapshots сохраняются);
+- тесты: window ≡ slice(full), bounded window на huge output, offset render.
 
 **Не входит (следующие PR):**
 
-- shell/`ExecCell` truncation banner и lazy pager;
-- CLI `codex debug session …` / web viewer;
-- reasoning summaries и transport recorder;
-- чтение `ToolCallRecord` из rollout внутри TUI (это слой CLI/web).
+- async load / progress / cancel / поиск по result;
+- чтение payload с диска по chunk (данные tool cell уже в RAM);
+- shell/`ExecCell` truncation banner;
+- CLI / web / reasoning / transport.
 
-### Дальше после PR #4
+### Прогресс по stage 5
 
-1. Lazy pager для больших outputs.
-2. CLI `codex debug session …` поверх session-inspector.
+- [x] Ветка от `origin/main` (после merge PR #4).
+- [x] `lazy_transcript` + pager wiring (`render_scrolled`, windowed HistoryCell API).
+- [x] MCP/Dynamic на lazy document.
+- [x] Тесты + `just test -p codex-tui` (targeted) / `fmt` / `fix`.
+- [ ] PR открыт.
+
+### Дальше после stage 5
+
+1. CLI `codex debug session …` (уже есть черновик PR #5 — после merge lazy pager привести к §14).
+2. CLI filters/export.
 3. Loopback web viewer.
-4. Reasoning summary command / provenance / transport A/B — отдельными PR.
+4. Reasoning / transport A/B — отдельными PR.
 
 ## 1. Цель
 
@@ -154,10 +160,11 @@ git fetch origin
 1. `tool-transcript/01-mcp-full-transcript` — PR #1 (смержен)
 2. `tool-transcript/02-raw-model` — PR #2 (смержен)
 3. `tool-transcript/03-completeness-detector` — PR #3 (смержен)
-4. `tool-transcript/04-tui-function-custom` — PR #4 (текущий)
-5. `tool-transcript/05-session-cli`
-6. `tool-transcript/06-local-web`
-7. `tool-transcript/07-console-ux` / reasoning / transport — по мере готовности
+4. `tool-transcript/04-tui-function-custom` — PR #4 (смержен)
+5. `tool-transcript/05-lazy-pager` — stage 5 (текущий)
+6. `tool-transcript/06-cli-debug-session` — CLI (§8; GitHub PR #5 открыт вне очереди)
+7. `tool-transcript/07-local-web`
+8. `tool-transcript/08-console-ux` / reasoning / transport — по мере готовности
 
 Каждая ветка создаётся от актуального `upstream/main`. Изменения предыдущего этапа либо сначала
 сливаются в `main` форка, либо последующие PR явно оформляются как stacked PR.
@@ -800,9 +807,9 @@ live UI и rollout replay.
 2. [x] reader и `ToolCallRecord` — PR #2;
 3. [x] truncation/completeness detector — PR #3;
 4. [x] MCP full transcript — PR #1; banner переведён на общий detector в PR #3;
-5. [ ] function/custom (`DynamicToolCall`) full transcript — PR #4 (открыт);
-6. [ ] lazy pager;
-7. [ ] CLI list/show;
+5. [x] function/custom (`DynamicToolCall`) full transcript — PR #4 (смержен);
+6. [ ] lazy pager — stage 5 / `tool-transcript/05-lazy-pager` (текущий);
+7. [ ] CLI list/show — `tool-transcript/06-cli-debug-session` (GitHub PR #5, вне очереди);
 8. [ ] CLI filters/export;
 9. [ ] loopback backend;
 10. [ ] минимальный web UI;
