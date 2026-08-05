@@ -45,6 +45,7 @@ use supports_color::Stream;
 
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 mod app_cmd;
+mod debug_session;
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 mod desktop_app;
 mod doctor;
@@ -239,7 +240,7 @@ enum DebugSubcommand {
     TraceReduce(DebugTraceReduceCommand),
 
     /// Inspect session rollouts using codex-session-inspector.
-    Session(DebugSessionCommand),
+    Session(crate::debug_session::DebugSessionCommand),
 
     /// Internal: reset local memory state for a fresh start.
     #[clap(hide = true)]
@@ -308,13 +309,6 @@ struct DebugTraceReduceCommand {
     /// Output path for reduced RolloutTrace JSON. Defaults to TRACE_BUNDLE/state.json.
     #[arg(long = "output", short = 'o', value_name = "FILE")]
     output: Option<PathBuf>,
-}
-
-#[derive(Debug, Parser)]
-struct DebugSessionCommand {
-    /// The path to the session rollout file.
-    #[arg(value_name = "SESSION_FILE")]
-    session_file: PathBuf,
 }
 
 #[derive(Debug, Parser)]
@@ -1559,7 +1553,7 @@ async fn cli_main(
                     root_remote_auth_token_env.as_deref(),
                     "debug session",
                 )?;
-                run_debug_session_command(cmd).await?;
+                crate::debug_session::run_debug_session_command(cmd).await?;
             }
             DebugSubcommand::ClearMemories => {
                 reject_remote_mode_for_subcommand(
@@ -1968,12 +1962,6 @@ async fn run_debug_trace_reduce_command(cmd: DebugTraceReduceCommand) -> anyhow:
     tokio::fs::write(&output, reduced_json).await?;
     println!("{}", output.display());
 
-    Ok(())
-}
-
-async fn run_debug_session_command(cmd: DebugSessionCommand) -> anyhow::Result<()> {
-    let records = codex_session_inspector::read_tool_records(&cmd.session_file).await?;
-    println!("{:#?}", records);
     Ok(())
 }
 
