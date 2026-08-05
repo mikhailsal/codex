@@ -75,3 +75,31 @@ fn row_limit_marker_appears_for_huge_output() {
         "missing row-limit marker in tail {tail:?}"
     );
 }
+
+#[test]
+fn single_huge_source_line_window_stays_bounded() {
+    // Minified JSON / log lines with no newlines are the failure mode called out in review:
+    // wrapping the entire source line before skip/take would allocate hundreds of thousands
+    // of Lines per draw. The window path must stay O(viewport).
+    let body = "A".repeat(200_000);
+    let mut doc = LazyTranscript::new();
+    doc.push_text_block("Result:", &body, 40);
+
+    let mid = plain(&doc.lines_window(
+        /*width*/ 40, /*start_row*/ 500, /*max_rows*/ 20,
+    ));
+    assert_eq!(mid.len(), 20);
+    assert!(
+        mid.iter().all(|line| {
+            let trimmed = line.trim();
+            !trimmed.is_empty() && trimmed.chars().all(|ch| ch == 'A')
+        }),
+        "scrolled window into a newline-free body must stay on wrapped body rows, got {mid:?}"
+    );
+
+    let head = plain(&doc.lines_window(/*width*/ 40, /*start_row*/ 0, /*max_rows*/ 5));
+    assert!(
+        head.iter().any(|line| line.contains("Result")),
+        "head window should still include the label, got {head:?}"
+    );
+}

@@ -235,22 +235,162 @@ fn emit_text_rows(
     let mut index = 0usize;
     let mut emitted = 0usize;
     for source_line in text.split('\n') {
-        let wrapped = wrap_source_line(source_line, width, indent, usize::MAX);
-        for line in wrapped {
-            if index >= skip && emitted < take {
-                out.push(line);
-                emitted += 1;
-            }
-            index += 1;
-            if emitted >= take && index >= need {
-                return index;
-            }
-        }
-        if emitted >= take && index >= skip {
+        if emitted >= take {
             return index;
+        }
+        let remaining_skip = skip.saturating_sub(index);
+        let remaining_take = take.saturating_sub(emitted);
+        // Bound wrapping to the rows still required for this window. A single minified /
+        // newline-free payload must not be expanded into a full Vec<Line> on every draw.
+        let wrap_budget = remaining_skip.saturating_add(remaining_take);
+        if wrap_budget == 0 {
+            return index;
+        }
+
+        let window =
+            wrap_source_line_window(source_line, width, indent, remaining_skip, remaining_take);
+        match window {
+            SourceLineWindow::BeforeWindow { row_count } => {
+                index = index.saturating_add(row_count);
+            }
+            SourceLineWindow::Rows {
+                rows,
+                consumed_rows,
+            } => {
+                for line in rows {
+                    if emitted < take {
+                        out.push(line);
+                        emitted += 1;
+                    }
+                }
+                index = index.saturating_add(consumed_rows);
+                if emitted >= take {
+                    return index;
+                }
+            }
         }
     }
     index
+}
+
+enum SourceLineWindow {
+    /// Source line lies entirely above the requested window.
+    BeforeWindow { row_count: usize },
+    /// Rows to paint from this source line, plus how far the cursor advanced through it.
+    Rows {
+        rows: Vec<Line<'static>>,
+        consumed_rows: usize,
+    },
+}
+
+/// Materialize only the visible slice of one source line.
+///
+/// `local_skip` / `local_take` are relative to this source line. Seeking uses content-column
+/// arithmetic when indent is constant so deep scroll does not allocate the skipped rows.
+fn wrap_source_line_window(
+    source_line: &str,
+    width: usize,
+    indent: &'static str,
+    local_skip: usize,
+    local_take: usize,
+) -> SourceLineWindow {
+    if local_take == 0 && local_skip == 0 {
+        return SourceLineWindow::Rows {
+            rows: Vec::new(),
+            consumed_rows: 0,
+        };
+    }
+    if source_line.is_empty() {
+        if local_skip > 0 {
+            return SourceLineWindow::BeforeWindow { row_count: 1 };
+        }
+        if local_take == 0 {
+            return SourceLineWindow::Rows {
+                rows: Vec::new(),
+                consumed_rows: 0,
+            };
+        }
+        return SourceLineWindow::Rows {
+            rows: vec![Line::from("")],
+            consumed_rows: 1,
+        };
+    }
+
+    if local_take == 0 {
+        // Only need to know whether this source line ends before the window.
+        let row_count =
+            source_line_row_count(source_line, width, indent, local_skip.saturating_add(1));
+        if row_count <= local_skip {
+            return SourceLineWindow::BeforeWindow { row_count };
+        }
+        return SourceLineWindow::Rows {
+            rows: Vec::new(),
+            consumed_rows: local_skip,
+        };
+    }
+
+    let indent_for_width = if width >= 3 { indent } else { "" };
+    let content_cols = width
+        .saturating_sub(UnicodeWidthStr::width(indent_for_width))
+        .max(1);
+
+    if local_skip > 0 {
+        let seek_cols = local_skip.saturating_mul(content_cols);
+        let (_prefix, rest, _) = take_prefix_by_width(source_line, seek_cols);
+        if rest.is_empty() {
+            let row_count =
+                source_line_row_count(source_line, width, indent, local_skip.saturating_add(1));
+            if row_count <= local_skip {
+                return SourceLineWindow::BeforeWindow { row_count };
+            }
+            // Column seek overshot relative to adaptive wrap; fall back below.
+        } else {
+            let rows = wrap_source_line(rest, width, indent, local_take);
+            if rows.len() == local_take {
+                return SourceLineWindow::Rows {
+                    rows,
+                    consumed_rows: local_skip.saturating_add(local_take),
+                };
+            }
+            if !rows.is_empty() {
+                // Source line ended inside the window after a successful seek.
+                let consumed_rows = local_skip.saturating_add(rows.len());
+                return SourceLineWindow::Rows {
+                    rows,
+                    consumed_rows,
+                };
+            }
+        }
+        // Adaptive wrap disagreed with column seeking; fall back to a bounded wrap-from-start.
+        let wrapped = wrap_source_line(
+            source_line,
+            width,
+            indent,
+            local_skip.saturating_add(local_take),
+        );
+        if wrapped.len() <= local_skip {
+            return SourceLineWindow::BeforeWindow {
+                row_count: wrapped.len(),
+            };
+        }
+        let consumed_rows = wrapped.len();
+        let rows = wrapped
+            .into_iter()
+            .skip(local_skip)
+            .take(local_take)
+            .collect();
+        return SourceLineWindow::Rows {
+            rows,
+            consumed_rows,
+        };
+    }
+
+    let rows = wrap_source_line(source_line, width, indent, local_take);
+    let consumed_rows = rows.len();
+    SourceLineWindow::Rows {
+        rows,
+        consumed_rows,
+    }
 }
 
 fn wrap_source_line(
