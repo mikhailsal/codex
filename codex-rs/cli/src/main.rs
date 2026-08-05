@@ -238,6 +238,9 @@ enum DebugSubcommand {
     #[clap(hide = true)]
     TraceReduce(DebugTraceReduceCommand),
 
+    /// Inspect session rollouts using codex-session-inspector.
+    Session(DebugSessionCommand),
+
     /// Internal: reset local memory state for a fresh start.
     #[clap(hide = true)]
     ClearMemories,
@@ -305,6 +308,13 @@ struct DebugTraceReduceCommand {
     /// Output path for reduced RolloutTrace JSON. Defaults to TRACE_BUNDLE/state.json.
     #[arg(long = "output", short = 'o', value_name = "FILE")]
     output: Option<PathBuf>,
+}
+
+#[derive(Debug, Parser)]
+struct DebugSessionCommand {
+    /// The path to the session rollout file.
+    #[arg(value_name = "SESSION_FILE")]
+    session_file: PathBuf,
 }
 
 #[derive(Debug, Parser)]
@@ -1543,6 +1553,14 @@ async fn cli_main(
                 )?;
                 run_debug_trace_reduce_command(cmd).await?;
             }
+            DebugSubcommand::Session(cmd) => {
+                reject_remote_mode_for_subcommand(
+                    root_remote.as_deref(),
+                    root_remote_auth_token_env.as_deref(),
+                    "debug session",
+                )?;
+                run_debug_session_command(cmd).await?;
+            }
             DebugSubcommand::ClearMemories => {
                 reject_remote_mode_for_subcommand(
                     root_remote.as_deref(),
@@ -1950,6 +1968,12 @@ async fn run_debug_trace_reduce_command(cmd: DebugTraceReduceCommand) -> anyhow:
     tokio::fs::write(&output, reduced_json).await?;
     println!("{}", output.display());
 
+    Ok(())
+}
+
+async fn run_debug_session_command(cmd: DebugSessionCommand) -> anyhow::Result<()> {
+    let records = codex_session_inspector::read_tool_records(&cmd.session_file).await?;
+    println!("{:#?}", records);
     Ok(())
 }
 
