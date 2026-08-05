@@ -1,0 +1,31 @@
+---
+source: tui/src/history_cell/tests.rs
+expression: transcript
+---
+• Tool call
+  Tool: workspace/inspect
+  Call ID: call-dynamic-full
+  Status: succeeded
+  Duration: 320.00ms
+Arguments:
+  {
+    "path": "synthetic-session.jsonl",
+    "limit": 8
+  }
+Result:
+  result line 1: persisted dynamic tool
+  output
+  result line 2: persisted dynamic tool
+  output
+  result line 3: persisted dynamic tool
+  output
+  result line 4: persisted dynamic tool
+  output
+  result line 5: persisted dynamic tool
+  output
+  result line 6: persisted dynamic tool
+  output
+  result line 7: persisted dynamic tool
+  output
+  result line 8: persisted dynamic tool
+  output

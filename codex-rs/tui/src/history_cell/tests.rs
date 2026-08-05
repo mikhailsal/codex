@@ -1685,6 +1685,165 @@ fn completed_mcp_tool_call_error_mentioning_truncation_without_marker_has_no_ban
 }
 
 #[test]
+fn completed_dynamic_tool_call_full_transcript_snapshot() {
+    let mut cell = new_active_dynamic_tool_call(
+        "call-dynamic-full".into(),
+        Some("workspace".into()),
+        "inspect".into(),
+        json!({
+            "path": "synthetic-session.jsonl",
+            "limit": 8,
+        }),
+        /*animations_enabled*/ false,
+    );
+    let text = (1..=8)
+        .map(|line| format!("result line {line}: persisted dynamic tool output"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    cell.complete(
+        Duration::from_millis(320),
+        codex_app_server_protocol::DynamicToolCallStatus::Completed,
+        Some(vec![
+            codex_app_server_protocol::DynamicToolCallOutputContentItem::InputText { text },
+        ]),
+        Some(true),
+    );
+
+    let compact = render_lines(&cell.display_lines(/*width*/ 40)).join("\n");
+    let transcript = render_lines(&cell.transcript_lines(/*width*/ 40)).join("\n");
+
+    assert!(!compact.contains("result line 8"));
+    assert!(transcript.contains("result line 8"));
+    assert!(transcript.contains("Tool: workspace/inspect"));
+    insta::assert_snapshot!("completed_dynamic_tool_call_compact", compact);
+    insta::assert_snapshot!(transcript);
+}
+
+#[test]
+fn completed_dynamic_tool_call_compact_caps_aggregate_content_items() {
+    let mut cell = new_active_dynamic_tool_call(
+        "call-dynamic-many-items".into(),
+        Some("workspace".into()),
+        "inspect".into(),
+        json!({"path": "many-items.jsonl"}),
+        /*animations_enabled*/ false,
+    );
+    let items = (1..=8)
+        .map(
+            |n| codex_app_server_protocol::DynamicToolCallOutputContentItem::InputText {
+                text: format!("item {n}: dynamic tool preview line"),
+            },
+        )
+        .collect();
+    cell.complete(
+        Duration::from_millis(50),
+        codex_app_server_protocol::DynamicToolCallStatus::Completed,
+        Some(items),
+        Some(true),
+    );
+
+    let compact = render_lines(&cell.display_lines(/*width*/ 80)).join("\n");
+    // Header plus at most TOOL_CALL_MAX_LINES (5) preview rows.
+    assert!(
+        compact.lines().count() <= 1 + crate::exec_cell::TOOL_CALL_MAX_LINES,
+        "compact cell exceeded aggregate preview budget:\n{compact}"
+    );
+    assert!(!compact.contains("item 8:"));
+    insta::assert_snapshot!(compact);
+}
+
+#[test]
+fn completed_dynamic_tool_call_transcript_bounds_huge_single_line() {
+    let mut cell = new_active_dynamic_tool_call(
+        "call-dynamic-huge".into(),
+        None,
+        "blob".into(),
+        json!({}),
+        /*animations_enabled*/ false,
+    );
+    let huge = "x".repeat(4_000_000);
+    cell.complete(
+        Duration::from_millis(10),
+        codex_app_server_protocol::DynamicToolCallStatus::Completed,
+        Some(vec![
+            codex_app_server_protocol::DynamicToolCallOutputContentItem::InputText { text: huge },
+        ]),
+        Some(true),
+    );
+
+    let lines = cell.transcript_lines(/*width*/ 40);
+    assert!(
+        lines.len() <= u16::MAX as usize,
+        "transcript exceeded pager height contract: {}",
+        lines.len()
+    );
+    let rendered = render_lines(&lines).join("\n");
+    assert!(rendered.contains("Transcript row limit reached"));
+}
+
+#[test]
+fn completed_dynamic_tool_call_media_transcript_snapshot() {
+    let mut cell = new_active_dynamic_tool_call(
+        "call-dynamic-media".into(),
+        None,
+        "capture".into(),
+        json!({"mode": "media"}),
+        /*animations_enabled*/ false,
+    );
+    cell.complete(
+        Duration::from_millis(40),
+        codex_app_server_protocol::DynamicToolCallStatus::Completed,
+        Some(vec![
+            codex_app_server_protocol::DynamicToolCallOutputContentItem::InputText {
+                text: "caption".into(),
+            },
+            codex_app_server_protocol::DynamicToolCallOutputContentItem::InputImage {
+                image_url: "data:image/png;base64,aGVsbG8=".into(),
+            },
+            codex_app_server_protocol::DynamicToolCallOutputContentItem::InputAudio {
+                audio_url: "data:audio/wav;base64,YXVkaW8=".into(),
+            },
+        ]),
+        Some(true),
+    );
+
+    let transcript = render_lines(&cell.transcript_lines(/*width*/ 80)).join("\n");
+
+    assert!(transcript.contains("caption"));
+    assert!(!transcript.contains("aGVsbG8="));
+    assert!(!transcript.contains("YXVkaW8="));
+    insta::assert_snapshot!(transcript);
+}
+
+#[test]
+fn completed_dynamic_tool_call_truncated_upstream_transcript_snapshot() {
+    let mut cell = new_active_dynamic_tool_call(
+        "call-dynamic-truncated".into(),
+        Some("tools".into()),
+        "fetch".into(),
+        json!({"url": "https://example.com/data"}),
+        /*animations_enabled*/ false,
+    );
+    cell.complete(
+        Duration::from_millis(90),
+        codex_app_server_protocol::DynamicToolCallStatus::Completed,
+        Some(vec![
+            codex_app_server_protocol::DynamicToolCallOutputContentItem::InputText {
+                text: "Warning: truncated output (original token count: 100)\n\
+             head…50 tokens truncated…tail"
+                    .into(),
+            },
+        ]),
+        Some(true),
+    );
+
+    let transcript = render_lines(&cell.transcript_lines(/*width*/ 80)).join("\n");
+
+    assert!(transcript.contains("Saved output is already truncated upstream"));
+    insta::assert_snapshot!(transcript);
+}
+
+#[test]
 fn completed_mcp_tool_call_multiple_outputs_snapshot() {
     let invocation = McpInvocation {
         server: "search".into(),

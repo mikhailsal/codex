@@ -2,7 +2,7 @@
 
 ## Статус выполнения
 
-Обновлено: 2026-07-25.
+Обновлено: 2026-07-26.
 
 ### Инфраструктура форка
 
@@ -17,41 +17,49 @@
 | --- | --- | --- | --- | --- |
 | 1 | Полный MCP transcript в `Ctrl+T` + banner усечения | `tool-transcript/01-mcp-full-transcript` | [#1](https://github.com/mikhailsal/codex/pull/1) | смержен 2026-07-25 |
 | 2 | Reader и `ToolCallRecord` в `codex-session-inspector` | `tool-transcript/02-raw-model` | [#2](https://github.com/mikhailsal/codex/pull/2) | смержен 2026-07-25 |
-| 3 | Truncation/completeness detector + TUI на общем API | `tool-transcript/03-completeness-detector` | [#3](https://github.com/mikhailsal/codex/pull/3) | открыт, готов к review 2026-07-25 |
-| 4 | Function/custom full transcript в TUI | — | — | не начат |
+| 3 | Truncation/completeness detector + TUI на общем API | `tool-transcript/03-completeness-detector` | [#3](https://github.com/mikhailsal/codex/pull/3) | смержен 2026-07-25 |
+| 4 | Function/custom (`DynamicToolCall`) full transcript в TUI | `tool-transcript/04-tui-function-custom` | [#4](https://github.com/mikhailsal/codex/pull/4) | открыт, готов к review 2026-07-26 |
 | 5+ | Lazy pager, CLI, web, reasoning, transport A/B | — | — | не начат |
 
-Текущая ветка: `tool-transcript/03-completeness-detector`.
+Текущая ветка: `tool-transcript/04-tui-function-custom`.
 
 ### Что уже есть в `main` форка
 
-- `Ctrl+T` показывает полный MCP result без лимита в 5 строк и banner при upstream truncation (ad-hoc substring check в TUI до PR #3).
-- Crate `codex-session-inspector`: чтение plain/zstd rollout, pairing call↔output по `(turn_id, call_id)`, orphan outputs, unknown records как raw JSON.
+- `Ctrl+T` показывает полный MCP result без лимита в 5 строк; truncation banner через `codex_session_inspector::text_contains_truncation_marker`.
+- Crate `codex-session-inspector`: чтение plain/zstd rollout, pairing call↔output по `(turn_id, call_id)`, orphan outputs, unknown records как raw JSON, `Completeness` + marker metadata.
 - Characterization snapshots для MCP transcript.
 
-### PR #3 (текущий этап) — цели и границы
+### PR #3 (смержен) — кратко
+
+- модуль `completeness` + поле на `ToolCallRecord` / `OrphanToolOutput`;
+- TUI MCP transcript переведён на общий detector;
+- исправлен false positive на mention-only `100 chars truncated…` без ведущего `…`.
+
+**Семантика `Complete`:** в сохранённом тексте нет известного маркера discard. Это не доказательство, что исходный output был меньше любого лимита.
+
+### PR #4 (текущий этап) — цели и границы
+
+**Контекст:** app-server отдаёт generic function/custom tools как `ThreadItem::DynamicToolCall`. До этого PR TUI игнорировал их в history (live start и replay — no-op), хотя agent-status feed уже умел их кратко суммировать. Специализированные tools (shell → `CommandExecution`/`ExecCell`, MCP, web search, patches) уже имеют свои cells; этот PR закрывает именно generic gap.
 
 **Входит:**
 
-- модуль `completeness` в `codex-session-inspector`;
-- поле `completeness` на `ToolCallRecord` / `OrphanToolOutput` (`Complete` / `Truncated { markers }` / `Unknown`);
-- детектор известных Codex-маркеров усечения с метаданными (kind, count, byte offset, matched text);
-- перевод TUI MCP transcript на `text_contains_truncation_marker` вместо локального heuristic;
-- тесты на каждую семью маркеров и регрессию ложного срабатывания на `100 chars truncated…` без ведущего `…`.
+- `DynamicToolCallCell` с компактным `display_lines()` (лимит `TOOL_CALL_MAX_LINES`) и полным `transcript_lines()`;
+- wiring live start/complete, replay, deferred interrupt queue, `mark_failed` при abort;
+- transcript: tool name (+ optional namespace), call ID, status, duration, pretty arguments, полный text result, metadata для image/audio без dump URL/base64;
+- upstream truncation banner через shared `text_contains_truncation_marker`;
+- snapshots + live/replay parity test.
 
 **Не входит (следующие PR):**
 
-- полный transcript для function/custom/shell cells;
-- lazy pager для многомегабайтных outputs;
-- CLI / web viewer;
-- reasoning summaries и transport recorder.
+- shell/`ExecCell` truncation banner и lazy pager;
+- CLI `codex debug session …` / web viewer;
+- reasoning summaries и transport recorder;
+- чтение `ToolCallRecord` из rollout внутри TUI (это слой CLI/web).
 
-**Семантика `Complete`:** в сохранённом тексте нет известного маркера, который Codex writers вставляют при discard. Это не доказательство, что исходный output был меньше любого лимита. Текст, который лишь *цитирует* маркер, может дать false positive; metadata markers делает такие случаи проверяемыми.
+### Дальше после PR #4
 
-### Дальше после PR #3
-
-1. Function/custom full transcript поверх `ToolCallRecord` + `completeness`.
-2. CLI `codex debug session …`.
+1. Lazy pager для больших outputs.
+2. CLI `codex debug session …` поверх session-inspector.
 3. Loopback web viewer.
 4. Reasoning summary command / provenance / transport A/B — отдельными PR.
 
@@ -145,8 +153,8 @@ git fetch origin
 
 1. `tool-transcript/01-mcp-full-transcript` — PR #1 (смержен)
 2. `tool-transcript/02-raw-model` — PR #2 (смержен)
-3. `tool-transcript/03-completeness-detector` — PR #3 (текущий)
-4. `tool-transcript/04-tui-function-custom` — следующий TUI transcript
+3. `tool-transcript/03-completeness-detector` — PR #3 (смержен)
+4. `tool-transcript/04-tui-function-custom` — PR #4 (текущий)
 5. `tool-transcript/05-session-cli`
 6. `tool-transcript/06-local-web`
 7. `tool-transcript/07-console-ux` / reasoning / transport — по мере готовности
@@ -791,8 +799,8 @@ live UI и rollout replay.
 1. [x] fixtures и characterization tests — внутри PR #1;
 2. [x] reader и `ToolCallRecord` — PR #2;
 3. [x] truncation/completeness detector — PR #3;
-4. [ ] MCP full transcript — фактически сделан в PR #1; banner переведён на общий detector в PR #3;
-5. [ ] function/custom full transcript;
+4. [x] MCP full transcript — PR #1; banner переведён на общий detector в PR #3;
+5. [ ] function/custom (`DynamicToolCall`) full transcript — PR #4 (открыт);
 6. [ ] lazy pager;
 7. [ ] CLI list/show;
 8. [ ] CLI filters/export;
