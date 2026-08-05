@@ -364,6 +364,58 @@ fn debug_session_custom_tool_content_items() -> Result<()> {
 }
 
 #[test]
+fn debug_session_file_resolves_compressed_sibling() -> Result<()> {
+    let codex_home = TempDir::new()?;
+    let thread_id = "00000000-0000-0000-0000-0000000000ee";
+    let plain = codex_home
+        .path()
+        .join("sessions/2024/01/02")
+        .join(format!("rollout-2024-01-02T12-00-00-{thread_id}.jsonl"));
+    fs::create_dir_all(plain.parent().unwrap())?;
+    let compressed = plain.with_file_name(format!(
+        "{}.zst",
+        plain.file_name().unwrap().to_string_lossy()
+    ));
+    let lines = [
+        session_meta(thread_id),
+        user_message("compressed demo"),
+        turn_started("turn-1"),
+        function_call("call-1", "{}"),
+        function_output("call-1", "from-zst"),
+    ];
+    {
+        let file = fs::File::create(&compressed)?;
+        let mut encoder = zstd::stream::write::Encoder::new(file, /*level*/ 1)?;
+        for line in &lines {
+            writeln!(encoder, "{line}")?;
+        }
+        encoder.finish()?;
+    }
+
+    // Caller has the canonical .jsonl path, but only .jsonl.zst exists on disk.
+    let tool = codex_command(codex_home.path())?
+        .args([
+            "debug",
+            "session",
+            "tool",
+            "--file",
+            plain.to_str().unwrap(),
+            "--call",
+            "call-1",
+            "--json",
+        ])
+        .output()?;
+    assert!(
+        tool.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&tool.stderr)
+    );
+    let tool_json: serde_json::Value = serde_json::from_slice(&tool.stdout)?;
+    assert_eq!(tool_json["result"], "from-zst");
+    Ok(())
+}
+
+#[test]
 fn debug_session_missing_session_exits_2() -> Result<()> {
     let codex_home = TempDir::new()?;
     codex_command(codex_home.path())?

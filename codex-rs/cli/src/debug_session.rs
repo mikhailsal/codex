@@ -13,6 +13,7 @@ use clap::Parser;
 use codex_core::config::find_codex_home;
 use codex_rollout::ARCHIVED_SESSIONS_SUBDIR;
 use codex_rollout::ThreadSortKey;
+use codex_rollout::existing_rollout_path;
 use codex_rollout::find_archived_thread_path_by_id_str;
 use codex_rollout::find_thread_path_by_id_str;
 use codex_rollout::get_threads;
@@ -635,13 +636,13 @@ async fn resolve_session_path(
 ) -> Result<PathBuf, DebugSessionError> {
     match (file, last, thread_id) {
         (Some(path), false, None) => {
-            if !path.exists() {
-                return Err(DebugSessionError::MissingSession(format!(
+            let resolved = existing_rollout_path(path).await.ok_or_else(|| {
+                DebugSessionError::MissingSession(format!(
                     "session file not found: {}",
                     path.display()
-                )));
-            }
-            Ok(path.to_path_buf())
+                ))
+            })?;
+            Ok(resolved)
         }
         (Some(_), _, _) => Err(DebugSessionError::Other(anyhow::anyhow!(
             "--file cannot be combined with --last or THREAD_ID"
