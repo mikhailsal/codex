@@ -114,6 +114,7 @@ mod base;
 mod dynamic_tool;
 mod exec;
 mod hook_cell;
+mod lazy_transcript;
 mod markdown_render_cache;
 mod mcp;
 mod messages;
@@ -246,6 +247,59 @@ pub(crate) trait HistoryCell: std::fmt::Debug + Send + Sync + Any {
     /// `$`-prefixed commands and exit status).
     fn transcript_lines(&self, width: u16) -> Vec<Line<'static>> {
         self.display_lines(width)
+    }
+
+    /// Total wrapped transcript rows for `width` without requiring a full materialization.
+    ///
+    /// Defaults to `transcript_lines(width).len()`. Large tool cells override this so the
+    /// pager can measure height from a lazy document.
+    fn transcript_row_count(&self, width: u16) -> usize {
+        self.transcript_lines(width).len()
+    }
+
+    /// Whether each returned transcript `Line` is already one viewport row at `width`.
+    ///
+    /// When `true`, the pager may slice with `transcript_*_window` using a viewport-row
+    /// offset. When `false` (the default), logical lines may still wrap under Paragraph, so
+    /// the pager must scroll with Paragraph rather than skipping whole `Line`s.
+    fn transcript_rows_are_prewrapped(&self) -> bool {
+        false
+    }
+
+    /// Materialize only `[start_row, start_row + max_rows)` of the transcript.
+    ///
+    /// Defaults to slicing `transcript_lines`. Safe for pager viewport offsets only when
+    /// [`Self::transcript_rows_are_prewrapped`] is `true` (or the lines never wrap). Large
+    /// tool cells override this to wrap on demand for the visible window.
+    fn transcript_lines_window(
+        &self,
+        width: u16,
+        start_row: usize,
+        max_rows: usize,
+    ) -> Vec<Line<'static>> {
+        self.transcript_lines(width)
+            .into_iter()
+            .skip(start_row)
+            .take(max_rows)
+            .collect()
+    }
+
+    /// Windowed transcript lines plus terminal hyperlink metadata.
+    ///
+    /// Defaults to slicing `transcript_hyperlink_lines`. Large tool cells that implement
+    /// lazy `transcript_lines_window` should override this to avoid full materialization.
+    /// Same prewrap contract as [`Self::transcript_lines_window`].
+    fn transcript_hyperlink_lines_window(
+        &self,
+        width: u16,
+        start_row: usize,
+        max_rows: usize,
+    ) -> Vec<HyperlinkLine> {
+        self.transcript_hyperlink_lines(width)
+            .into_iter()
+            .skip(start_row)
+            .take(max_rows)
+            .collect()
     }
 
     /// Returns transcript-overlay lines plus terminal hyperlink metadata.

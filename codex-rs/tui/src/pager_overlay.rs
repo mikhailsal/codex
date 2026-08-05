@@ -389,6 +389,9 @@ impl Renderable for CachedRenderable {
         }
         self.height.get().unwrap_or(0)
     }
+    fn render_scrolled(&self, area: Rect, buf: &mut Buffer, row_offset: u16) {
+        self.renderable.render_scrolled(area, buf, row_offset);
+    }
 }
 
 struct CellRenderable {
@@ -398,7 +401,17 @@ struct CellRenderable {
 
 impl Renderable for CellRenderable {
     fn render(&self, area: Rect, buf: &mut Buffer) {
-        let hyperlink_lines = self.cell.transcript_hyperlink_lines(area.width);
+        self.render_scrolled(area, buf, 0);
+    }
+
+    fn desired_height(&self, width: u16) -> u16 {
+        self.cell.desired_transcript_height(width)
+    }
+
+    fn render_scrolled(&self, area: Rect, buf: &mut Buffer, row_offset: u16) {
+        if area.height == 0 || area.width == 0 {
+            return;
+        }
         let style = if self.cell.as_any().is::<UserHistoryCell>() {
             if self.highlighted {
                 user_message_style().reversed()
@@ -408,15 +421,30 @@ impl Renderable for CellRenderable {
         } else {
             Style::default()
         };
-        let p = Paragraph::new(Text::from(visible_lines_ref(&hyperlink_lines)))
-            .style(style)
-            .wrap(Wrap { trim: false });
-        p.render(area, buf);
-        mark_buffer_hyperlinks(buf, area, &hyperlink_lines, /*scroll_rows*/ 0);
-    }
 
-    fn desired_height(&self, width: u16) -> u16 {
-        self.cell.desired_transcript_height(width)
+        // Prewrapped tool transcripts expose a true viewport-row window. Other cells may
+        // still wrap under Paragraph, so a logical-line skip would drop continuation rows.
+        if self.cell.transcript_rows_are_prewrapped() {
+            let hyperlink_lines = self.cell.transcript_hyperlink_lines_window(
+                area.width,
+                usize::from(row_offset),
+                usize::from(area.height),
+            );
+            Paragraph::new(Text::from(visible_lines_ref(&hyperlink_lines)))
+                .style(style)
+                .wrap(Wrap { trim: false })
+                .render(area, buf);
+            mark_buffer_hyperlinks(buf, area, &hyperlink_lines, /*scroll_rows*/ 0);
+            return;
+        }
+
+        let hyperlink_lines = self.cell.transcript_hyperlink_lines(area.width);
+        Paragraph::new(Text::from(visible_lines_ref(&hyperlink_lines)))
+            .style(style)
+            .wrap(Wrap { trim: false })
+            .scroll((row_offset, 0))
+            .render(area, buf);
+        mark_buffer_hyperlinks(buf, area, &hyperlink_lines, usize::from(row_offset));
     }
 }
 
@@ -918,25 +946,16 @@ fn render_offset_content(
     renderable: &dyn Renderable,
     scroll_offset: u16,
 ) -> u16 {
-    let height = renderable.desired_height(area.width);
-    let mut tall_buf = Buffer::empty(Rect::new(
-        0,
-        0,
-        area.width,
-        height.min(area.height + scroll_offset),
-    ));
-    renderable.render(*tall_buf.area(), &mut tall_buf);
-    let copy_height = area
-        .height
-        .min(tall_buf.area().height.saturating_sub(scroll_offset));
-    for y in 0..copy_height {
-        let src_y = y + scroll_offset;
-        for x in 0..area.width {
-            buf[(area.x + x, area.y + y)] = tall_buf[(x, src_y)].clone();
-        }
+    let remaining = renderable
+        .desired_height(area.width)
+        .saturating_sub(scroll_offset);
+    let draw_height = remaining.min(area.height);
+    if draw_height == 0 || area.width == 0 {
+        return 0;
     }
-
-    copy_height
+    let draw_area = Rect::new(area.x, area.y, area.width, draw_height);
+    renderable.render_scrolled(draw_area, buf, scroll_offset);
+    draw_height
 }
 
 #[cfg(test)]
@@ -1091,6 +1110,158 @@ mod tests {
         term.draw(|f| overlay.render(f.area(), f.buffer_mut()))
             .expect("draw");
         assert_snapshot!(term.backend());
+    }
+
+    #[test]
+    fn transcript_overlay_scrolled_render_does_not_require_tall_buffer() {
+        // Pager offset painting should show the scrolled window without building a
+        // full-height offscreen buffer for the cell.
+        let mut overlay = transcript_overlay(vec![Arc::new(TestCell {
+            lines: (0..80).map(|i| Line::from(format!("row-{i:02}"))).collect(),
+        })]);
+        overlay.view.scroll_offset = 20;
+        let area = Rect::new(
+            /*x*/ 0, /*y*/ 0, /*width*/ 40, /*height*/ 10,
+        );
+        let mut buf = Buffer::empty(area);
+        overlay.render(area, &mut buf);
+
+        let rendered: String = area
+            .positions()
+            .map(|position| buf[position].symbol().to_string())
+            .collect::<Vec<_>>()
+            .join("");
+        assert!(
+            rendered.contains("row-20"),
+            "expected scrolled window to include row-20, got {rendered:?}"
+        );
+        assert!(
+            !rendered.contains("row-00"),
+            "scrolled window should not still show the first row: {rendered:?}"
+        );
+    }
+
+    /// Prewrapped lazy cell that fails the test if the pager falls back to full materialization.
+    #[derive(Debug)]
+    struct LazyWindowCell {
+        lines: Vec<Line<'static>>,
+        full_materialize_calls: Arc<AtomicUsize>,
+    }
+
+    impl crate::history_cell::HistoryCell for LazyWindowCell {
+        fn display_lines(&self, _width: u16) -> Vec<Line<'static>> {
+            self.lines.clone()
+        }
+
+        fn raw_lines(&self) -> Vec<Line<'static>> {
+            self.lines.clone()
+        }
+
+        fn transcript_lines(&self, _width: u16) -> Vec<Line<'static>> {
+            self.full_materialize_calls.fetch_add(1, Ordering::Relaxed);
+            self.lines.clone()
+        }
+
+        fn transcript_rows_are_prewrapped(&self) -> bool {
+            true
+        }
+
+        fn transcript_row_count(&self, _width: u16) -> usize {
+            self.lines.len()
+        }
+
+        fn transcript_lines_window(
+            &self,
+            _width: u16,
+            start_row: usize,
+            max_rows: usize,
+        ) -> Vec<Line<'static>> {
+            self.lines
+                .iter()
+                .skip(start_row)
+                .take(max_rows)
+                .cloned()
+                .collect()
+        }
+
+        fn transcript_hyperlink_lines_window(
+            &self,
+            width: u16,
+            start_row: usize,
+            max_rows: usize,
+        ) -> Vec<HyperlinkLine> {
+            crate::terminal_hyperlinks::plain_hyperlink_lines(
+                self.transcript_lines_window(width, start_row, max_rows),
+            )
+        }
+
+        fn desired_transcript_height(&self, _width: u16) -> u16 {
+            u16::try_from(self.lines.len()).unwrap_or(u16::MAX)
+        }
+    }
+
+    #[test]
+    fn transcript_overlay_scrolled_lazy_cell_avoids_full_materialize() {
+        let full_materialize_calls = Arc::new(AtomicUsize::new(0));
+        let mut overlay = transcript_overlay(vec![Arc::new(LazyWindowCell {
+            lines: (0..80)
+                .map(|i| Line::from(format!("lazy-{i:02}")))
+                .collect(),
+            full_materialize_calls: Arc::clone(&full_materialize_calls),
+        })]);
+        overlay.view.scroll_offset = 25;
+        let area = Rect::new(
+            /*x*/ 0, /*y*/ 0, /*width*/ 40, /*height*/ 10,
+        );
+        let mut buf = Buffer::empty(area);
+        overlay.render(area, &mut buf);
+
+        let rendered: String = area
+            .positions()
+            .map(|position| buf[position].symbol().to_string())
+            .collect::<Vec<_>>()
+            .join("");
+        assert!(
+            rendered.contains("lazy-25"),
+            "expected lazy window to include lazy-25, got {rendered:?}"
+        );
+        assert_eq!(
+            full_materialize_calls.load(Ordering::Relaxed),
+            0,
+            "scrolled lazy path must not call transcript_lines()"
+        );
+    }
+
+    #[test]
+    fn transcript_overlay_scrolled_preserves_wrapped_logical_line_rows() {
+        // One logical line wraps to multiple viewport rows. Scrolling by one viewport row
+        // must keep the continuation visible instead of skipping the whole Line.
+        let long = format!("WRAP-{}", "x".repeat(60));
+        let mut overlay = transcript_overlay(vec![Arc::new(TestCell {
+            lines: vec![Line::from(long), Line::from("AFTER")],
+        })]);
+        overlay.view.scroll_offset = 1;
+        let area = Rect::new(
+            /*x*/ 0, /*y*/ 0, /*width*/ 20, /*height*/ 8,
+        );
+        let mut buf = Buffer::empty(area);
+        overlay.render(area, &mut buf);
+
+        let rendered: String = area
+            .positions()
+            .map(|position| buf[position].symbol().to_string())
+            .collect::<Vec<_>>()
+            .join("");
+        assert!(
+            rendered.contains('x'),
+            "continuation of the wrapped logical line must remain visible, got {rendered:?}"
+        );
+        // Header occupies y=0; content starts at y=1. With scroll_offset=1 the first wrapped
+        // content row is skipped, so "WRAP-" (start of the logical line) should be gone.
+        assert!(
+            !rendered.contains("WRAP-"),
+            "first wrapped viewport row should be scrolled away, got {rendered:?}"
+        );
     }
 
     #[test]

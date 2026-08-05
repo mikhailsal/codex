@@ -21,6 +21,34 @@ pub trait Renderable {
     fn cursor_style(&self, _area: Rect) -> SetCursorStyle {
         SetCursorStyle::DefaultUserShape
     }
+
+    /// Render content starting at `row_offset` into a viewport-sized `area`.
+    ///
+    /// Default preserves the historical tall-buffer approach used by the pager when a
+    /// renderable does not implement windowed painting.
+    fn render_scrolled(&self, area: Rect, buf: &mut Buffer, row_offset: u16) {
+        if row_offset == 0 {
+            self.render(area, buf);
+            return;
+        }
+        let height = self.desired_height(area.width);
+        let mut tall_buf = Buffer::empty(Rect::new(
+            0,
+            0,
+            area.width,
+            height.min(area.height.saturating_add(row_offset)),
+        ));
+        self.render(*tall_buf.area(), &mut tall_buf);
+        let copy_height = area
+            .height
+            .min(tall_buf.area().height.saturating_sub(row_offset));
+        for y in 0..copy_height {
+            let src_y = y + row_offset;
+            for x in 0..area.width {
+                buf[(area.x + x, area.y + y)] = tall_buf[(x, src_y)].clone();
+            }
+        }
+    }
 }
 
 pub enum RenderableItem<'a> {
@@ -54,6 +82,13 @@ impl<'a> Renderable for RenderableItem<'a> {
         match self {
             RenderableItem::Owned(child) => child.cursor_style(area),
             RenderableItem::Borrowed(child) => child.cursor_style(area),
+        }
+    }
+
+    fn render_scrolled(&self, area: Rect, buf: &mut Buffer, row_offset: u16) {
+        match self {
+            RenderableItem::Owned(child) => child.render_scrolled(area, buf, row_offset),
+            RenderableItem::Borrowed(child) => child.render_scrolled(area, buf, row_offset),
         }
     }
 }
@@ -481,6 +516,43 @@ impl<'a> Renderable for InsetRenderable<'a> {
 
     fn cursor_style(&self, area: Rect) -> SetCursorStyle {
         self.child.cursor_style(area.inset(self.insets))
+    }
+
+    fn render_scrolled(&self, area: Rect, buf: &mut Buffer, row_offset: u16) {
+        if area.height == 0 || area.width == 0 {
+            return;
+        }
+        let top = self.insets.top;
+        let left = self.insets.left;
+        let right = self.insets.right;
+        let inner_width = area.width.saturating_sub(left.saturating_add(right));
+        if inner_width == 0 {
+            return;
+        }
+
+        if row_offset < top {
+            let blank = top - row_offset;
+            if blank >= area.height {
+                return;
+            }
+            let child_area = Rect::new(
+                area.x.saturating_add(left),
+                area.y.saturating_add(blank),
+                inner_width,
+                area.height.saturating_sub(blank),
+            );
+            self.child.render_scrolled(child_area, buf, 0);
+            return;
+        }
+
+        let child_area = Rect::new(
+            area.x.saturating_add(left),
+            area.y,
+            inner_width,
+            area.height,
+        );
+        self.child
+            .render_scrolled(child_area, buf, row_offset - top);
     }
 }
 
