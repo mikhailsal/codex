@@ -1,0 +1,11 @@
+---
+source: tui/src/history_cell/tests.rs
+assertion_line: 1752
+expression: compact
+---
+• Called workspace/inspect({"path":"many-items.jsonl"})
+  └ item 1: dynamic tool preview line
+    item 2: dynamic tool preview line
+    item 3: dynamic tool preview line
+    item 4: dynamic tool preview line
+    item 5: dynamic tool preview line

@@ -2,6 +2,7 @@
 
 use super::dynamic_tool::DynamicToolCallCell;
 use super::*;
+use crate::line_truncation::truncate_line_to_width;
 use crate::wrapping::adaptive_wrap_line;
 use crate::wrapping::word_wrap_line;
 use codex_app_server_protocol::DynamicToolCallOutputContentItem;
@@ -25,6 +26,10 @@ impl TranscriptBuilder {
         }
     }
 
+    fn remaining_content_rows(&self) -> usize {
+        TRANSCRIPT_CONTENT_MAX_ROWS.saturating_sub(self.lines.len())
+    }
+
     fn push(&mut self, line: Line<'static>) {
         if self.lines.len() < TRANSCRIPT_CONTENT_MAX_ROWS {
             self.lines.push(line);
@@ -39,12 +44,31 @@ impl TranscriptBuilder {
         initial_indent: &'static str,
         subsequent_indent: &'static str,
     ) {
+        let remaining = self.remaining_content_rows();
+        if remaining == 0 {
+            self.truncated = true;
+            return;
+        }
+
         let initial_indent = if self.width >= 3 { initial_indent } else { "" };
         let subsequent_indent = if self.width >= 3 {
             subsequent_indent
         } else {
             ""
         };
+
+        // Bound source width before wrapping so a huge single-line payload cannot
+        // allocate more wrapped rows than the remaining transcript budget.
+        let max_source_cols = remaining
+            .saturating_add(1)
+            .saturating_mul(self.width.max(1));
+        let line = if line.width() > max_source_cols {
+            self.truncated = true;
+            truncate_line_to_width(line, max_source_cols)
+        } else {
+            line
+        };
+
         let wrapped = adaptive_wrap_line(
             &line,
             RtOptions::new(self.width)
@@ -52,9 +76,27 @@ impl TranscriptBuilder {
                 .subsequent_indent(subsequent_indent.into()),
         );
         for line in wrapped {
+            if self.remaining_content_rows() == 0 {
+                self.truncated = true;
+                break;
+            }
             let line = line_to_static(&line);
             if line.width() > self.width {
+                let nested_remaining = self.remaining_content_rows();
+                let nested_max_cols = nested_remaining
+                    .saturating_add(1)
+                    .saturating_mul(self.width.max(1));
+                let line = if line.width() > nested_max_cols {
+                    self.truncated = true;
+                    truncate_line_to_width(line, nested_max_cols)
+                } else {
+                    line
+                };
                 for line in word_wrap_line(&line, RtOptions::new(self.width)) {
+                    if self.remaining_content_rows() == 0 {
+                        self.truncated = true;
+                        break;
+                    }
                     self.push(line_to_static(&line));
                 }
             } else {
@@ -64,6 +106,9 @@ impl TranscriptBuilder {
     }
 
     fn push_block(&mut self, label: &str, content: &str) {
+        if self.truncated {
+            return;
+        }
         self.push_wrapped_line(label.to_string().bold().into(), "", "");
 
         if content.is_empty() {
@@ -72,6 +117,10 @@ impl TranscriptBuilder {
 
         let content_without_trailing_newline = content.strip_suffix('\n').unwrap_or(content);
         for source_line in content_without_trailing_newline.split('\n') {
+            if self.truncated || self.remaining_content_rows() == 0 {
+                self.truncated = true;
+                break;
+            }
             if source_line.is_empty() {
                 self.push(Line::from(""));
             } else {

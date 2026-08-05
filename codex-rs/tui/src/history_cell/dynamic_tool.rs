@@ -109,10 +109,14 @@ impl DynamicToolCallCell {
         }
     }
 
-    fn render_content_preview(item: &DynamicToolCallOutputContentItem, width: usize) -> String {
+    fn render_content_preview(
+        item: &DynamicToolCallOutputContentItem,
+        width: usize,
+        max_lines: usize,
+    ) -> String {
         match item {
             DynamicToolCallOutputContentItem::InputText { text } => {
-                format_and_truncate_tool_result(text, TOOL_CALL_MAX_LINES, width)
+                format_and_truncate_tool_result(text, max_lines, width)
             }
             DynamicToolCallOutputContentItem::InputImage { .. } => "<image content>".to_string(),
             DynamicToolCallOutputContentItem::InputAudio { .. } => "<audio content>".to_string(),
@@ -171,17 +175,40 @@ impl HistoryCell for DynamicToolCallCell {
         let detail_wrap_width = (width as usize).saturating_sub(4).max(1);
 
         if let Some(content_items) = &self.content_items {
+            let mut remaining_lines = TOOL_CALL_MAX_LINES;
             for item in content_items {
-                let text = Self::render_content_preview(item, detail_wrap_width);
+                if remaining_lines == 0 {
+                    break;
+                }
+                let text = Self::render_content_preview(item, detail_wrap_width, remaining_lines);
                 for segment in text.split('\n') {
+                    if remaining_lines == 0 {
+                        break;
+                    }
                     let line = Line::from(segment.to_string().dim());
+                    // Bound source before wrapping so one overlong segment cannot
+                    // allocate more wrapped rows than the remaining compact budget.
+                    let max_source_cols = remaining_lines
+                        .saturating_add(1)
+                        .saturating_mul(detail_wrap_width.max(1));
+                    let line = if line.width() > max_source_cols {
+                        crate::line_truncation::truncate_line_to_width(line, max_source_cols)
+                    } else {
+                        line
+                    };
                     let wrapped = adaptive_wrap_line(
                         &line,
                         RtOptions::new(detail_wrap_width)
                             .initial_indent("".into())
                             .subsequent_indent("    ".into()),
                     );
-                    detail_lines.extend(wrapped.iter().map(line_to_static));
+                    for wrapped_line in wrapped {
+                        if remaining_lines == 0 {
+                            break;
+                        }
+                        detail_lines.push(line_to_static(&wrapped_line));
+                        remaining_lines = remaining_lines.saturating_sub(1);
+                    }
                 }
             }
         }
@@ -214,9 +241,20 @@ impl HistoryCell for DynamicToolCallCell {
         ))];
 
         if let Some(content_items) = &self.content_items {
+            let mut remaining_lines = TOOL_CALL_MAX_LINES;
             for item in content_items {
-                let text = Self::render_content_preview(item, RAW_TOOL_OUTPUT_WIDTH);
-                lines.extend(raw_lines_from_source(&text));
+                if remaining_lines == 0 {
+                    break;
+                }
+                let text =
+                    Self::render_content_preview(item, RAW_TOOL_OUTPUT_WIDTH, remaining_lines);
+                for line in raw_lines_from_source(&text) {
+                    if remaining_lines == 0 {
+                        break;
+                    }
+                    lines.push(line);
+                    remaining_lines = remaining_lines.saturating_sub(1);
+                }
             }
         }
 

@@ -1715,7 +1715,70 @@ fn completed_dynamic_tool_call_full_transcript_snapshot() {
     assert!(!compact.contains("result line 8"));
     assert!(transcript.contains("result line 8"));
     assert!(transcript.contains("Tool: workspace/inspect"));
+    insta::assert_snapshot!("completed_dynamic_tool_call_compact", compact);
     insta::assert_snapshot!(transcript);
+}
+
+#[test]
+fn completed_dynamic_tool_call_compact_caps_aggregate_content_items() {
+    let mut cell = new_active_dynamic_tool_call(
+        "call-dynamic-many-items".into(),
+        Some("workspace".into()),
+        "inspect".into(),
+        json!({"path": "many-items.jsonl"}),
+        /*animations_enabled*/ false,
+    );
+    let items = (1..=8)
+        .map(
+            |n| codex_app_server_protocol::DynamicToolCallOutputContentItem::InputText {
+                text: format!("item {n}: dynamic tool preview line"),
+            },
+        )
+        .collect();
+    cell.complete(
+        Duration::from_millis(50),
+        codex_app_server_protocol::DynamicToolCallStatus::Completed,
+        Some(items),
+        Some(true),
+    );
+
+    let compact = render_lines(&cell.display_lines(/*width*/ 80)).join("\n");
+    // Header plus at most TOOL_CALL_MAX_LINES (5) preview rows.
+    assert!(
+        compact.lines().count() <= 1 + crate::exec_cell::TOOL_CALL_MAX_LINES,
+        "compact cell exceeded aggregate preview budget:\n{compact}"
+    );
+    assert!(!compact.contains("item 8:"));
+    insta::assert_snapshot!(compact);
+}
+
+#[test]
+fn completed_dynamic_tool_call_transcript_bounds_huge_single_line() {
+    let mut cell = new_active_dynamic_tool_call(
+        "call-dynamic-huge".into(),
+        None,
+        "blob".into(),
+        json!({}),
+        /*animations_enabled*/ false,
+    );
+    let huge = "x".repeat(4_000_000);
+    cell.complete(
+        Duration::from_millis(10),
+        codex_app_server_protocol::DynamicToolCallStatus::Completed,
+        Some(vec![
+            codex_app_server_protocol::DynamicToolCallOutputContentItem::InputText { text: huge },
+        ]),
+        Some(true),
+    );
+
+    let lines = cell.transcript_lines(/*width*/ 40);
+    assert!(
+        lines.len() <= u16::MAX as usize,
+        "transcript exceeded pager height contract: {}",
+        lines.len()
+    );
+    let rendered = render_lines(&lines).join("\n");
+    assert!(rendered.contains("Transcript row limit reached"));
 }
 
 #[test]
