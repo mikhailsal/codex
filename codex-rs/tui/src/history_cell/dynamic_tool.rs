@@ -265,6 +265,10 @@ impl HistoryCell for DynamicToolCallCell {
         transcript::render(self, width)
     }
 
+    fn transcript_rows_are_prewrapped(&self) -> bool {
+        true
+    }
+
     fn transcript_row_count(&self, width: u16) -> usize {
         transcript::build(self, width).row_count(width)
     }
