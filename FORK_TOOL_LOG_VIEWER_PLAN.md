@@ -19,7 +19,7 @@
 | 2 | Reader и `ToolCallRecord` в `codex-session-inspector` | `tool-transcript/02-raw-model` | [#2](https://github.com/mikhailsal/codex/pull/2) | смержен 2026-07-25 |
 | 3 | Truncation/completeness detector + TUI на общем API | `tool-transcript/03-completeness-detector` | [#3](https://github.com/mikhailsal/codex/pull/3) | смержен 2026-07-25 |
 | 4 | Function/custom (`DynamicToolCall`) full transcript в TUI | `tool-transcript/04-tui-function-custom` | [#4](https://github.com/mikhailsal/codex/pull/4) | смержен 2026-07-26 |
-| 5 | Lazy pager для больших transcript outputs | `tool-transcript/05-lazy-pager` | — | **в работе** |
+| 5 | Lazy pager для больших transcript outputs | `tool-transcript/05-lazy-pager` | [#6](https://github.com/mikhailsal/codex/pull/6) | открыт, готов к review 2026-08-05 |
 | 6 | CLI `codex debug session list/show/tools/tool` | `tool-transcript/06-cli-debug-session` | [#5](https://github.com/mikhailsal/codex/pull/5) | открыт вне очереди (не блокирует #5 plan stage) |
 | 7+ | CLI filters/export, web, reasoning, transport A/B | — | — | не начат |
 
@@ -60,7 +60,7 @@
 - [x] `lazy_transcript` + pager wiring (`render_scrolled`, windowed HistoryCell API).
 - [x] MCP/Dynamic на lazy document.
 - [x] Тесты + `just test -p codex-tui` (targeted) / `fmt` / `fix`.
-- [ ] PR открыт.
+- [x] PR открыт: [mikhailsal/codex#6](https://github.com/mikhailsal/codex/pull/6).
 
 ### Дальше после stage 5
 
@@ -808,7 +808,7 @@ live UI и rollout replay.
 3. [x] truncation/completeness detector — PR #3;
 4. [x] MCP full transcript — PR #1; banner переведён на общий detector в PR #3;
 5. [x] function/custom (`DynamicToolCall`) full transcript — PR #4 (смержен);
-6. [ ] lazy pager — stage 5 / `tool-transcript/05-lazy-pager` (текущий);
+6. [~] lazy pager — stage 5 / `tool-transcript/05-lazy-pager` — [PR #6](https://github.com/mikhailsal/codex/pull/6) открыт;
 7. [ ] CLI list/show — `tool-transcript/06-cli-debug-session` (GitHub PR #5, вне очереди);
 8. [ ] CLI filters/export;
 9. [ ] loopback backend;
