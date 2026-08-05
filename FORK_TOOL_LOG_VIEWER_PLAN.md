@@ -21,7 +21,7 @@
 | 4 | Function/custom (`DynamicToolCall`) full transcript в TUI | `tool-transcript/04-tui-function-custom` | [#4](https://github.com/mikhailsal/codex/pull/4) | смержен 2026-07-26 |
 | 5 | Lazy pager для больших transcript outputs | `tool-transcript/05-lazy-pager` | [#6](https://github.com/mikhailsal/codex/pull/6) | смержен 2026-08-05 |
 | 6 | CLI stub: `debug session <FILE>` → Debug dump | `tool-transcript/06-cli-debug-session` | [#5](https://github.com/mikhailsal/codex/pull/5) | смержен 2026-08-05 (неполный) |
-| **7** | **CLI `list` / `show` / `tools` / `tool`** | `tool-transcript/07-cli-list-show` | — | **в работе** |
+| **7** | **CLI `list` / `show` / `tools` / `tool`** | `tool-transcript/07-cli-list-show` | [#7](https://github.com/mikhailsal/codex/pull/7) | открыт, готов к review 2026-08-05 |
 | 8 | CLI filters/export (`--raw`/`--pretty`/`--head`/`export`) | — | — | не начат |
 | 9+ | loopback web, reasoning, transport A/B | — | — | не начат |
 
@@ -71,7 +71,7 @@
 - [x] Точечные тесты: `systemd-run --user --scope -p MemoryHigh=6G -p MemoryMax=8G
   -p MemorySwapMax=1G -- just test -p codex-cli --test debug_session --build-jobs 1
   --test-threads 1` (4/4 pass) / `fmt` / `just fix -p codex-cli -j1` в том же memory scope.
-- [ ] PR открыт.
+- [x] PR открыт: [mikhailsal/codex#7](https://github.com/mikhailsal/codex/pull/7).
 
 **Замечания реализации stage 7:**
 
@@ -871,7 +871,7 @@ live UI и rollout replay.
 4. [x] MCP full transcript — PR #1; banner переведён на общий detector в PR #3;
 5. [x] function/custom (`DynamicToolCall`) full transcript — PR #4 (смержен);
 6. [x] lazy pager — stage 5 / [PR #6](https://github.com/mikhailsal/codex/pull/6) (смержен);
-7. [~] CLI list/show — stage 7 / `tool-transcript/07-cli-list-show` (заменяет stub [PR #5](https://github.com/mikhailsal/codex/pull/5));
+7. [x] CLI list/show — stage 7 / `tool-transcript/07-cli-list-show` — [PR #7](https://github.com/mikhailsal/codex/pull/7) (заменяет stub [PR #5](https://github.com/mikhailsal/codex/pull/5));
 8. [ ] CLI filters/export;
 9. [ ] loopback backend;
 10. [ ] минимальный web UI;
