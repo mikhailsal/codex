@@ -33,6 +33,8 @@ const EXIT_MISSING_CALL: u8 = 3;
 const EXIT_PARSE: u8 = 4;
 
 const DEFAULT_LIST_LIMIT: usize = 50;
+/// Hard cap so `--limit` cannot preallocate an enormous `Vec` in listing helpers.
+const MAX_LIST_LIMIT: usize = 1_000;
 
 /// Inspect session rollouts using codex-session-inspector.
 #[derive(Debug, Parser)]
@@ -55,7 +57,7 @@ pub enum DebugSessionSubcommand {
 
 #[derive(Debug, Parser)]
 pub struct ListArgs {
-    /// Maximum number of sessions to print.
+    /// Maximum number of sessions to print (clamped to 1000).
     #[arg(long, default_value_t = DEFAULT_LIST_LIMIT)]
     pub limit: usize,
 
@@ -228,7 +230,13 @@ async fn run(cmd: DebugSessionCommand) -> Result<(), DebugSessionError> {
 
 async fn run_list(args: ListArgs) -> Result<(), DebugSessionError> {
     let codex_home = find_codex_home().context("failed to resolve CODEX_HOME")?;
-    let page_size = args.limit.max(1);
+    let page_size = args.limit.clamp(1, MAX_LIST_LIMIT);
+    if args.limit > MAX_LIST_LIMIT {
+        eprintln!(
+            "note: --limit {} exceeds max {MAX_LIST_LIMIT}; clamping.",
+            args.limit
+        );
+    }
     let page = if args.archived {
         get_threads_in_root(
             codex_home.join(ARCHIVED_SESSIONS_SUBDIR).to_path_buf(),
