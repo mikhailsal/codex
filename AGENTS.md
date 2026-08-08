@@ -61,6 +61,51 @@ In the codex-rs folder where the rust code lives:
     trivial; prefer new modules/files and keep `chatwidget.rs` focused on orchestration.
 - When running Rust commands (e.g. `just fix` or `just test`) be patient with the command and never try to kill them using the PID. Rust lock can make the execution slow, this is expected.
 
+## Local Build Safety (OOM Prevention)
+
+This machine has 16 GB RAM and only 2 GB swap. Rust release builds of this workspace can easily
+consume 12-18 GB and **freeze the entire system** if not constrained. Follow these rules strictly:
+
+### NEVER run unconstrained release builds
+
+- **NEVER** run `cargo build --release` directly without memory safety measures.
+- **NEVER** run `cargo build --release` with the default job count (`-j 8` on this machine).
+- **NEVER** use the standard `[profile.release]` locally — it enables thin LTO which requires ~18 GB
+  during the link step alone.
+
+### How to build locally
+
+- Use `just install-fork` or `./scripts/install-codex-fork.sh` to build and install as `codex-fork`.
+- This script automatically:
+  - Uses the `release-local` profile (no LTO, codegen-units=16, still opt-level=3).
+  - Calculates a safe `-j` value based on available RAM (typically `-j 2` on 16 GB machines).
+  - Applies a systemd MemoryMax cgroup cap to prevent system freezes.
+- Override parallelism: `CODEX_FORK_JOBS=3 just install-fork`
+- If you need a full-LTO release binary, use the GitHub Actions workflow: `gh workflow run build-fork.yml -R mikhailsal/codex`
+
+### Memory rules for any cargo command
+
+- For `cargo build` (debug): safe to run with default parallelism (`-j 8`).
+- For `cargo build --profile release-local`: use `-j 2` or `-j 3` maximum.
+- For `just test`: safe with defaults (tests use debug profile).
+- For `just fix` / `just clippy`: use `-j 4` maximum to avoid memory pressure during analysis.
+- If a build command is taking excessive time and appears stuck, check `free -h` before killing it.
+  If available memory is below 1 GB, the system is at risk of freeze.
+
+### If the system froze during a build
+
+After a hard reset, stale cargo lock files may block the next build. Clear them:
+```
+rm -f codex-rs/target/.package-cache
+pgrep -af 'cargo|rustc' | grep -v grep  # kill orphans if any
+```
+
+### The fork binary
+
+- `codex-fork` (at `~/.local/bin/codex-fork`) is our fork's build.
+- `codex` (at nvm path) is the official npm package — never touch it.
+- Rebuild after code changes: `just install-fork` (incremental builds are fast, ~2-5 min).
+
 Run `just fmt` (in the `codex-rs` directory) automatically after you have finished making code changes anywhere in this repository; do not ask for approval to run it. Additionally, run the tests:
 
 1. Do not run `cargo test` directly. Use `just test` so test execution follows the repo defaults.
