@@ -1,0 +1,94 @@
+# Build a full-LTO release `codex` binary for this fork and upload it as an
+# artifact. Intended for golden/release builds on machines that cannot survive
+# thin LTO locally (see `profile.release-local` + `scripts/install-codex-fork.sh`).
+#
+# Trigger manually from the Actions tab or:
+#   gh workflow run build-fork.yml
+
+name: build-fork
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: build-fork-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build release codex (linux-x86_64)
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    defaults:
+      run:
+        working-directory: codex-rs
+    env:
+      CARGO_NET_GIT_FETCH_WITH_CLI: "true"
+      CARGO_TERM_COLOR: always
+
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Increase swap for thin LTO linking
+        shell: bash
+        run: |
+          set -euo pipefail
+          # ubuntu-latest has ~7 GiB RAM; thin LTO needs ~14-20 GiB peak.
+          # Add a dedicated swapfile so the linker can finish without OOM.
+          sudo swapoff -a || true
+          sudo fallocate -l 16G /swapfile-build
+          sudo chmod 600 /swapfile-build
+          sudo mkswap /swapfile-build
+          sudo swapon /swapfile-build
+          free -h
+
+      - name: Print runner specs
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "OS: $(uname -a)"
+          echo "Logical CPUs: $(nproc)"
+          free -h
+          df -h .
+
+      - uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582 # 1.95.0
+
+      - name: Configure rusty_v8 artifact overrides and verify checksums
+        uses: ./.github/actions/setup-rusty-v8
+        with:
+          target: x86_64-unknown-linux-gnu
+
+      - name: Cache Cargo registry and git deps
+        uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: build-fork-cargo-${{ runner.os }}-${{ hashFiles('codex-rs/Cargo.lock') }}
+          restore-keys: |
+            build-fork-cargo-${{ runner.os }}-
+
+      - name: Build release codex (full thin LTO)
+        run: cargo build --release -p codex-cli --bin codex
+
+      - name: Package artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          cp target/release/codex dist/codex
+          chmod +x dist/codex
+          ./dist/codex --version
+          sha256sum dist/codex | tee dist/codex.sha256
+
+      - name: Upload codex binary
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: codex-fork-x86_64-unknown-linux-gnu
+          path: |
+            codex-rs/dist/codex
+            codex-rs/dist/codex.sha256
+          if-no-files-found: error
+          retention-days: 30

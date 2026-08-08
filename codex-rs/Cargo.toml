@@ -549,6 +549,14 @@ strip = false
 # Balance parallel release code generation against binary size.
 codegen-units = 4
 
+# Memory-efficient release for local machines (~16 GB RAM) that cannot
+# survive thin LTO linking. Still opt-level=3; expect ~5-10% slower than
+# full release and a larger binary.
+[profile.release-local]
+inherits = "release"
+lto = false
+codegen-units = 16
+
 [profile.profiling]
 inherits = "release"
 debug = "full"

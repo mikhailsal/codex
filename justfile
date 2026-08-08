@@ -59,6 +59,14 @@ install:
     rustup show active-toolchain
     cargo fetch
 
+# Build a release CLI and install it as `codex-fork` under ~/.local/bin
+# (override with CODEX_FORK_INSTALL_DIR / CODEX_FORK_NAME). Leaves official
+# `codex` on PATH untouched.
+[no-cd]
+[unix]
+install-fork:
+    {{ justfile_directory() }}/scripts/install-codex-fork.sh
+
 [windows]
 install:
     #!powershell.exe -File
