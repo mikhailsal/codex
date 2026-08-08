@@ -53,6 +53,10 @@ jobs:
           free -h
           df -h .
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
       - uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582 # 1.95.0
 
       - name: Configure rusty_v8 artifact overrides and verify checksums
